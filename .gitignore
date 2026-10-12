@@ -7,3 +7,9 @@ DerivedData/
 Payload/
 *.ipa
 .DS_Store
+
+# Install page output and signing material: never commit these
+site/
+*.p12
+*.mobileprovision
+*.cer

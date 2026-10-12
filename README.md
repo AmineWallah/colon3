@@ -15,8 +15,9 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
     SoulseekClient.swift             Network.framework client (Apple platforms only)
   Tests/SoulseekKitTests/            codec tests against bytes produced by Nicotine+
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
+scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
 project.yml                XcodeGen spec
-.github/workflows/         Linux tests + unsigned IPA build
+.github/workflows/build.yml  CI/CD: tests, IPA build, signing, install page, releases
 ```
 
 ## Building
@@ -35,24 +36,71 @@ git clone --depth 1 https://github.com/nicotine-plus/nicotine-plus /tmp/nicotine
 python3 scripts/gen_fixtures.py /tmp/nicotine-plus > Packages/SoulseekKit/Tests/SoulseekKitTests/Fixtures.swift
 ```
 
-### App via GitHub Actions
-
-Push to GitHub. The `Build` workflow runs the Linux tests, then builds an unsigned `colon3.ipa` on a macOS runner (free for public repos). Download it from the run's artifacts.
-
 ### App in a macOS VM
 
 ```sh
-brew install xcodegen
 xcodegen generate
-open colon3.xcodeproj
+xcodebuild -project colon3.xcodeproj -scheme colon3 -configuration Release \
+  -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+  CODE_SIGNING_ALLOWED=NO build
+mkdir -p Payload && cp -R build/Build/Products/Release-iphoneos/colon3.app Payload/ && zip -qry colon3.ipa Payload
 ```
 
-Set your team under Signing & Capabilities (a free Apple ID works), plug in the iPhone (USB passthrough to the VM), and Run. Free-account builds expire after 7 days; rebuilding re-signs.
+Homebrew no longer supports Intel Macs, which includes QEMU macOS VMs. Install XcodeGen from its [release zip](https://github.com/yonaskolb/XcodeGen/releases) instead: copy `bin/xcodegen` to `/usr/local/bin` and `share/xcodegen` to `/usr/local/share`.
+
+## CI/CD
+
+`.github/workflows/build.yml` runs on every push and pull request:
+
+| Job | When | What it does |
+|---|---|---|
+| Protocol tests | always | `swift test` for SoulseekKit on Linux |
+| Build unsigned IPA | always | XcodeGen + `xcodebuild` on a macOS runner. Version comes from `MARKETING_VERSION` in `project.yml` (or the tag), build number from the run number. The IPA is kept as a run artifact for 30 days. |
+| Sign and stage install page | pushes to `main`, if signing secrets are set | Signs the IPA with zsign and the distribution cert, checks the cert's revocation status (shown in the run summary), and builds the install page |
+| Deploy install page | after signing | Publishes the page to GitHub Pages |
+| GitHub Release | tags `v*` | Attaches the unsigned IPA to a release |
+
+The macOS runner is only free for public repos.
+
+### One-time setup for the install page
+
+1. **Enable Pages:** repo Settings › Pages › Build and deployment › Source: **GitHub Actions**.
+2. **Add the signing secrets** from the folder holding your distribution `.p12` and `.mobileprovision` (works in fish and bash):
+   ```sh
+   base64 -w0 dist.p12 | gh secret set SIGNING_P12_BASE64
+   gh secret set SIGNING_P12_PASSWORD        # prompts for the password
+   base64 -w0 dist.mobileprovision | gh secret set SIGNING_PROFILE_BASE64
+   ```
+3. **Only if the profile is locked to one bundle ID** (its `application-identifier` isn't `TEAMID.*`), set that ID as a variable:
+   `gh variable set SIGN_BUNDLE_ID --body com.example.app`
+
+After that, every push to `main` updates `https://<user>.github.io/colon3/`. Open it in Safari on the phone and tap **Install**. Installing over an existing copy keeps your downloaded music and login.
+
+Things to know:
+- **The page is public.** Pages on a public repo is open to anyone who finds the URL. It's marked `noindex`, but anyone with the link can install your signed build. That's harmless for you, but wide distribution under a shared enterprise cert makes revocation more likely.
+- **Secrets never reach pull requests.** The signing job only runs for pushes to `main`.
+- **If the cert gets revoked,** the run summary's certificate check shows it. Replace the three secrets with the new cert and re-run the workflow.
+
+### Releases
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub Release, ready for SideStore or any signer.
 
 ## Installing
 
-- **SideStore / AltStore:** open the unsigned IPA from the workflow artifact. They sign it with your Apple ID on-device. Free accounts: 7-day expiry, 3 apps max.
-- **Xcode:** build and run directly from the VM as above.
+- **Install page (recommended):** see [CI/CD](#cicd). Push to `main`, then open the Pages URL in Safari.
+- **Locally, without CI:** sign the IPA, then serve an install page through a temporary HTTPS tunnel:
+  ```sh
+  zsign -k dist.p12 -p 'PASSWORD' -m dist.mobileprovision -o colon3-signed.ipa colon3.ipa
+  cloudflared tunnel --url http://localhost:8000      # note the https:// URL it prints
+  python3 scripts/make-ota-site.py colon3-signed.ipa --base-url https://<tunnel-url> --out ~/colon3-dist
+  cd ~/colon3-dist && python3 -m http.server 8000
+  ```
+  Serve only that output folder, never your home or Downloads folder. Stop both servers when you're done.
+- **SideStore / AltStore:** open the unsigned IPA from a release or workflow artifact. They sign it with your Apple ID on-device. Free accounts: 7-day expiry, 3 apps max.
 
 ## Using it
 

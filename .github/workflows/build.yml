@@ -1,34 +1,71 @@
-name: Build
+name: CI/CD
+
+# Every push and PR: protocol tests on Linux, then an unsigned IPA from macOS.
+# Pushes to main: also sign with the distribution cert (if the secrets are set)
+#   and publish an over-the-air install page on GitHub Pages.
+# Tags v*: also attach the unsigned IPA to a GitHub Release.
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pinned so signing doesn't change underneath us; bump deliberately.
+  ZSIGN_COMMIT: 614caa8d1ca949e260e5746144aa52d27a4b08d6
+
 jobs:
-  protocol-tests:
+  test:
     name: Protocol tests (Linux)
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
       - name: Install zlib headers
-        run: apt-get update && apt-get install -y zlib1g-dev
+        run: apt-get update -qq && apt-get install -y -qq zlib1g-dev
       - name: Test SoulseekKit
         run: swift test --package-path Packages/SoulseekKit
 
-  ipa:
-    name: Unsigned IPA
+  build:
+    name: Build unsigned IPA
+    needs: test
     runs-on: macos-15
-    needs: protocol-tests
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Work out version numbers
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -nE 's/^ *MARKETING_VERSION: *"?([^"]+)"?.*/\1/p' project.yml | head -1)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Version $version (build $GITHUB_RUN_NUMBER)"
+
       - name: Install XcodeGen
         run: brew install xcodegen
+
       - name: Generate project
         run: xcodegen generate
+
       - name: Build
         run: |
+          set -o pipefail
           xcodebuild build \
             -project colon3.xcodeproj \
             -scheme colon3 \
@@ -36,15 +73,166 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            | tee xcodebuild.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/colon3.app
+
       - name: Package IPA
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/colon3.app Payload/
           zip -qry colon3.ipa Payload
+
       - uses: actions/upload-artifact@v4
         with:
           name: colon3-unsigned
           path: colon3.ipa
+          retention-days: 30
+
+      - name: Keep build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+
+  sign:
+    name: Sign and stage install page
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      SIGNING_P12_BASE64: ${{ secrets.SIGNING_P12_BASE64 }}
+      SIGNING_P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+      SIGNING_PROFILE_BASE64: ${{ secrets.SIGNING_PROFILE_BASE64 }}
+      SIGN_BUNDLE_ID: ${{ vars.SIGN_BUNDLE_ID }}
+    steps:
+      - name: Check signing secrets
+        id: check
+        run: |
+          if [ -n "$SIGNING_P12_BASE64" ] && [ -n "$SIGNING_PROFILE_BASE64" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Signing secrets not set; skipping signing and the install page. See README › CI/CD."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.enabled == 'true'
+
+      - uses: actions/download-artifact@v4
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          name: colon3-unsigned
+          path: dist
+
+      - name: Cache zsign
+        id: zsign-cache
+        if: steps.check.outputs.enabled == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/zsign-bin
+          key: zsign-${{ runner.os }}-${{ env.ZSIGN_COMMIT }}
+
+      - name: Build zsign
+        if: steps.check.outputs.enabled == 'true' && steps.zsign-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq g++ pkg-config libssl-dev
+          git init -q zsign && cd zsign
+          git fetch -q --depth 1 https://github.com/zhlynn/zsign.git "$ZSIGN_COMMIT"
+          git checkout -q FETCH_HEAD
+          cd build/linux && make clean >/dev/null && make
+          mkdir -p ~/zsign-bin && cp ../../bin/zsign ~/zsign-bin/
+
+      - name: Decode certificate and profile
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          umask 077
+          echo "$SIGNING_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          echo "$SIGNING_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/profile.mobileprovision"
+
+      - name: Check certificate (revocation)
+        if: steps.check.outputs.enabled == 'true'
+        continue-on-error: true
+        run: |
+          {
+            echo '### Signing certificate'
+            echo '```'
+            ~/zsign-bin/zsign -C "$RUNNER_TEMP/cert.p12" -p "$SIGNING_P12_PASSWORD" 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          args=(-k "$RUNNER_TEMP/cert.p12" -p "$SIGNING_P12_PASSWORD" -m "$RUNNER_TEMP/profile.mobileprovision" -o colon3-signed.ipa)
+          if [ -n "$SIGN_BUNDLE_ID" ]; then args+=(-b "$SIGN_BUNDLE_ID"); fi
+          ~/zsign-bin/zsign "${args[@]}" dist/colon3.ipa
+          test -s colon3-signed.ipa
+
+      - name: Configure Pages
+        id: pages
+        if: steps.check.outputs.enabled == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Build install page
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          python3 scripts/make-ota-site.py colon3-signed.ipa \
+            --base-url "${{ steps.pages.outputs.base_url }}" \
+            --out site \
+            --commit "$GITHUB_SHA"
+          echo "Install page: ${{ steps.pages.outputs.base_url }}/" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          path: site
+
+      - name: Remove secrets from disk
+        if: always()
+        run: rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/profile.mobileprovision"
+
+  deploy:
+    name: Deploy install page
+    needs: sign
+    if: needs.sign.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: colon3-unsigned
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file="dist/colon3-${{ needs.build.outputs.version }}-unsigned.ipa"
+          mv dist/colon3.ipa "$file"
+          gh release create "$GITHUB_REF_NAME" "$file" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "colon3 ${{ needs.build.outputs.version }}" \
+            --generate-notes
