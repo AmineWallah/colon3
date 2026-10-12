@@ -208,7 +208,7 @@ struct LibraryView: View {
                         Image(systemName: selection.contains(item.id) ? "checkmark.circle.fill" : "circle")
                             .font(.title2)
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, selection.contains(item.id) ? Color.accentColor : Color.black.opacity(0.3))
+                            .foregroundStyle(.white, selection.contains(item.id) ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.black.opacity(0.3)))
                             .padding(6)
                     }
                 }
@@ -219,7 +219,7 @@ struct LibraryView: View {
                 if favorites.isFavorite(item) {
                     Image(systemName: "star.fill")
                         .font(.caption2)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(.tint)
                 }
             }
             Text(itemSubtitle(item))

@@ -128,7 +128,7 @@ struct VerticalGainSlider: View {
                     .fill(Color.secondary.opacity(0.25))
                     .frame(width: 4)
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(.tint)
                     .frame(width: 4, height: abs(knobY - zeroY))
                     .offset(y: min(knobY, zeroY))
                 Rectangle()
@@ -189,7 +189,7 @@ struct ResponseCurve: View {
                     }
                     if let last = points.last { path.addLine(to: CGPoint(x: size.width, y: last.y)) }
                 }
-                .stroke(enabled ? Color.accentColor : Color.secondary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .stroke(enabled ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
         }
         .animation(.easeOut(duration: 0.15), value: gains)

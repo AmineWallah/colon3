@@ -4,6 +4,7 @@ import SwiftUI
 struct SearchView: View {
     @EnvironmentObject private var soulseek: SoulseekModel
     @State private var query = ""
+    @State private var showFilters = false
 
     var body: some View {
         NavigationStack {
@@ -13,9 +14,19 @@ struct SearchView: View {
                 }
                 if !soulseek.currentQuery.isEmpty {
                     Section {
-                        Text("\(soulseek.responseCount) users answered · \(soulseek.results.count) folders")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text("\(soulseek.responseCount) users · \(soulseek.results.count) folders")
+                            if soulseek.hiddenCount > 0 {
+                                Text("· \(soulseek.hiddenCount) filtered out")
+                            }
+                            Spacer()
+                            if soulseek.filters.activeCount > 0 {
+                                Button("Clear Filters") { soulseek.filters = ResultFilters(sort: soulseek.filters.sort) }
+                                    .font(.footnote.weight(.semibold))
+                            }
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 ForEach(soulseek.results) { folder in
@@ -33,12 +44,17 @@ struct SearchView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Toggle("Playable Formats Only", isOn: $soulseek.audioOnly)
+                    Button {
+                        showFilters = true
                     } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Image(systemName: soulseek.filters.activeCount > 0
+                              ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                     }
                 }
+            }
+            .sheet(isPresented: $showFilters) {
+                SearchFiltersView()
+                    .presentationDetents([.medium, .large])
             }
             .overlay {
                 if soulseek.currentQuery.isEmpty && soulseek.isLoggedIn {
@@ -188,6 +204,69 @@ struct FileRow: View {
                 .foregroundStyle(.green)
         default:
             ProgressView()
+        }
+    }
+}
+
+struct SearchFiltersView: View {
+    @EnvironmentObject private var soulseek: SoulseekModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Sort By", selection: $soulseek.filters.sort) {
+                        ForEach(ResultFilters.Sort.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                }
+
+                Section("Quality") {
+                    Picker("Format", selection: $soulseek.filters.format) {
+                        ForEach(ResultFilters.Format.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Picker("Minimum Bitrate", selection: $soulseek.filters.minBitrate) {
+                        ForEach(ResultFilters.bitrateChoices, id: \.self) { kbps in
+                            Text(kbps == 0 ? "Any" : "\(kbps) kbps").tag(kbps)
+                        }
+                    }
+                    Toggle("Playable Formats Only", isOn: $soulseek.audioOnly)
+                }
+
+                Section {
+                    Toggle("Free Upload Slot Only", isOn: $soulseek.filters.freeSlotOnly)
+                    Stepper(value: $soulseek.filters.minFiles, in: 1...30) {
+                        LabeledContent("Minimum Files", value: soulseek.filters.minFiles == 1 ? "Any" : "\(soulseek.filters.minFiles)")
+                    }
+                } header: {
+                    Text("Availability")
+                } footer: {
+                    Text("A minimum of around 6 files skips loose singles and finds complete albums.")
+                }
+
+                Section {
+                    TextField("live, remix, karaoke", text: $soulseek.filters.excludeWords)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Exclude Words")
+                } footer: {
+                    Text("Hides folders whose path contains any of these.")
+                }
+
+                if !soulseek.filters.isDefault {
+                    Section {
+                        Button("Reset Filters", role: .destructive) { soulseek.filters = ResultFilters() }
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }

@@ -30,7 +30,6 @@ struct Colon3App: App {
                 .environmentObject(player.clock)
                 .environmentObject(favorites)
                 .environmentObject(lastfm)
-                .tint(.pink)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()

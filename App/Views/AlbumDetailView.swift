@@ -38,11 +38,11 @@ struct AlbumDetailView: View {
                     .multilineTextAlignment(.center)
                 if let artist = library.artist(named: album.artist) {
                     NavigationLink(value: artist) {
-                        Text(album.artist).font(.title3).foregroundStyle(Color.accentColor)
+                        Text(album.artist).font(.title3).foregroundStyle(.tint)
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Text(album.artist).font(.title3).foregroundStyle(Color.accentColor)
+                    Text(album.artist).font(.title3).foregroundStyle(.tint)
                 }
                 HStack(spacing: 6) {
                     Text(details(album))

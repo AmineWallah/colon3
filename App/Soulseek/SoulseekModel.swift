@@ -79,6 +79,14 @@ final class SoulseekModel: ObservableObject {
     @Published var audioOnly = true {
         didSet { rebuildResults() }
     }
+    @Published var filters = ResultFilters.load() {
+        didSet {
+            filters.save()
+            rebuildResults()
+        }
+    }
+    /// Folders found but hidden by the filters.
+    @Published private(set) var hiddenCount = 0
 
     let client: SoulseekClient
     let library: LibraryStore
@@ -148,6 +156,7 @@ final class SoulseekModel: ObservableObject {
         responses.removeAll()
         pendingResponses.removeAll()
         results.removeAll()
+        hiddenCount = 0
         responseCount = 0
         searchToken = client.search(trimmed)
     }
@@ -185,17 +194,15 @@ final class SoulseekModel: ObservableObject {
                 folders[key]?.files.append(file)
             }
         }
-        results = folders.values
-            .map { folder in
-                var sorted = folder
-                sorted.images = images[folder.id] ?? []
-                sorted.files.sort { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
-                return sorted
-            }
-            .sorted { lhs, rhs in
-                if lhs.slotFree != rhs.slotFree { return lhs.slotFree }
-                return lhs.speed > rhs.speed
-            }
+        let all = folders.values.map { folder in
+            var sorted = folder
+            sorted.images = images[folder.id] ?? []
+            sorted.files.sort { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
+            return sorted
+        }
+        let kept = all.filter { filters.accepts($0) }
+        hiddenCount = all.count - kept.count
+        results = filters.ordered(kept)
     }
 
     // MARK: Downloads

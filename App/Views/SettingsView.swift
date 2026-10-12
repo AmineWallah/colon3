@@ -18,6 +18,10 @@ struct SettingsView: View {
             Form {
                 soulseekSection
 
+                Section("Accent Colour") {
+                    AccentPicker()
+                }
+
                 Section("Playback") {
                     NavigationLink {
                         EqualizerView(equalizer: player.equalizer)

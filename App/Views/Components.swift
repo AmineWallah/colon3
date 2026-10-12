@@ -77,7 +77,7 @@ struct SectionIndexBar: View {
             ForEach(SortKey.alphabet, id: \.self) { letter in
                 Text(letter)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(available.contains(letter) ? Color.accentColor : Color.secondary.opacity(0.4))
+                    .foregroundStyle(available.contains(letter) ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary.opacity(0.4)))
                     .frame(width: 18, height: rowHeight)
             }
         }
@@ -121,7 +121,7 @@ struct TrackRow: View {
             if let isSelected {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary))
             }
             if showArtwork {
                 ArtworkView(source: library.artwork(for: track), size: 48, cornerRadius: 6)
@@ -136,7 +136,7 @@ struct TrackRow: View {
                     if player.current?.id == track.id {
                         Image(systemName: player.isPlaying ? "waveform" : "speaker.fill")
                             .font(.caption)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(.tint)
                             .symbolEffect(.variableColor.iterative, isActive: player.isPlaying)
                     }
                     Text(track.title)
@@ -153,7 +153,7 @@ struct TrackRow: View {
             if favorites.isFavorite(track) {
                 Image(systemName: "star.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.tint)
             }
             if track.isSpatial {
                 Image(systemName: "dot.radiowaves.left.and.right")
