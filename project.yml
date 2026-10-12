@@ -1,0 +1,41 @@
+# XcodeGen spec. Run `xcodegen generate` to produce Shoal.xcodeproj (it's gitignored).
+name: Shoal
+options:
+  bundleIdPrefix: com.aminewallah
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  SoulseekKit:
+    path: Packages/SoulseekKit
+
+targets:
+  Shoal:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: SoulseekKit
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: Shoal
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.shoal
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        # Set this to your Apple ID team in Xcode (Signing & Capabilities) when building in the VM.
+        DEVELOPMENT_TEAM: ""
+    scheme: {}

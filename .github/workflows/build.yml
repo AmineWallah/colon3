@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  protocol-tests:
+    name: Protocol tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: apt-get update && apt-get install -y zlib1g-dev
+      - name: Test SoulseekKit
+        run: swift test --package-path Packages/SoulseekKit
+
+  ipa:
+    name: Unsigned IPA
+    runs-on: macos-15
+    needs: protocol-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project Shoal.xcodeproj \
+            -scheme Shoal \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Shoal.app Payload/
+          zip -qry Shoal.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shoal-unsigned
+          path: Shoal.ipa
