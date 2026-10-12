@@ -49,7 +49,7 @@ struct LibraryView: View {
             .overlay {
                 if library.tracks.isEmpty && !library.isScanning {
                     ContentUnavailableHint(title: "Nothing here yet",
-                                           message: "Downloads land here. You can also copy music into Shoal › Music in the Files app.",
+                                           message: "Downloads land here. You can also copy music into colon3 › Music in the Files app.",
                                            systemImage: "music.note")
                 }
             }

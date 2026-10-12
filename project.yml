@@ -1,5 +1,5 @@
-# XcodeGen spec. Run `xcodegen generate` to produce Shoal.xcodeproj (it's gitignored).
-name: Shoal
+# XcodeGen spec. Run `xcodegen generate` to produce colon3.xcodeproj (it's gitignored).
+name: colon3
 options:
   bundleIdPrefix: com.aminewallah
   deploymentTarget:
@@ -11,7 +11,7 @@ packages:
     path: Packages/SoulseekKit
 
 targets:
-  Shoal:
+  colon3:
     type: application
     platform: iOS
     sources:
@@ -21,7 +21,7 @@ targets:
     info:
       path: Support/Info.plist
       properties:
-        CFBundleDisplayName: Shoal
+        CFBundleDisplayName: colon3
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         UILaunchScreen: {}
@@ -32,7 +32,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.shoal
+        PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic

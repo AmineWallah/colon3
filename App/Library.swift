@@ -84,7 +84,7 @@ final class Library: ObservableObject {
                 let track = await loadTrack(url: url, relativePath: relative)
                 tracks.append(track)
             }
-            let virtualPath = (["Shoal"] + relative.split(separator: "/").map(String.init)).joined(separator: "\\")
+            let virtualPath = (["colon3"] + relative.split(separator: "/").map(String.init)).joined(separator: "\\")
             shares.append(LocalShare(virtualPath: virtualPath, url: url, size: size))
         }
         return (tracks, shares)

@@ -78,7 +78,7 @@ public final class SoulseekClient: @unchecked Sendable {
     public let downloadDirectory: URL
     public let incompleteDirectory: URL
 
-    private let queue = DispatchQueue(label: "shoal.soulseek-client")
+    private let queue = DispatchQueue(label: "colon3.soulseek-client")
     private var server: NWConnection?
     private var serverFrames = FrameBuffer()
     private var username = ""
@@ -516,7 +516,7 @@ public final class SoulseekClient: @unchecked Sendable {
             sendToPeer(username, [.sharedFileListResponse(folders: sharedFolders())])
 
         case .userInfoRequest:
-            sendToPeer(username, [.userInfoResponse(description: "Shoal (iOS)",
+            sendToPeer(username, [.userInfoResponse(description: "colon3 (iOS)",
                                                     totalUploads: completedUploads,
                                                     queueSize: UInt32(uploadQueue.count),
                                                     slotsFree: activeUpload == nil)])

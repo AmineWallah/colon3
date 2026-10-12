@@ -30,8 +30,8 @@ jobs:
       - name: Build
         run: |
           xcodebuild build \
-            -project Shoal.xcodeproj \
-            -scheme Shoal \
+            -project colon3.xcodeproj \
+            -scheme colon3 \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -42,9 +42,9 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/Shoal.app Payload/
-          zip -qry Shoal.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/colon3.app Payload/
+          zip -qry colon3.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: Shoal-unsigned
-          path: Shoal.ipa
+          name: colon3-unsigned
+          path: colon3.ipa

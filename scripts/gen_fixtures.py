@@ -37,7 +37,7 @@ def fileinfo(name, size, attrs):
     out = b"\x01" + s(name) + u64(size) + s("") + u32(len(attrs))
     for k, v in attrs: out += u32(k) + u32(v)
     return out
-shared = u32(1) + s("Shoal\\Album") + u32(1) + fileinfo("song.mp3", 5000, []) + u32(0) + u32(0)
+shared = u32(1) + s("colon3\\Album") + u32(1) + fileinfo("song.mp3", 5000, []) + u32(0) + u32(0)
 fx["sharedFileListPayloadUncompressed"] = shared
 
 print("// Generated from Nicotine+ pynicotine/slskmessages.py encoders (and hand-built server replies).")

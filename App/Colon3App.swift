@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ShoalApp: App {
+struct Colon3App: App {
     @StateObject private var library: Library
     @StateObject private var model: AppModel
     @StateObject private var player = Player()

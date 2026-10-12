@@ -1,4 +1,4 @@
-# Shoal
+# colon3 (:3)
 
 A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library with lock-screen controls. No server or desktop client in between.
 
@@ -37,14 +37,14 @@ python3 scripts/gen_fixtures.py /tmp/nicotine-plus > Packages/SoulseekKit/Tests/
 
 ### App via GitHub Actions
 
-Push to GitHub. The `Build` workflow runs the Linux tests, then builds an unsigned `Shoal.ipa` on a macOS runner (free for public repos). Download it from the run's artifacts.
+Push to GitHub. The `Build` workflow runs the Linux tests, then builds an unsigned `colon3.ipa` on a macOS runner (free for public repos). Download it from the run's artifacts.
 
 ### App in a macOS VM
 
 ```sh
 brew install xcodegen
 xcodegen generate
-open Shoal.xcodeproj
+open colon3.xcodeproj
 ```
 
 Set your team under Signing & Capabilities (a free Apple ID works), plug in the iPhone (USB passthrough to the VM), and Run. Free-account builds expire after 7 days; rebuilding re-signs.
@@ -59,18 +59,18 @@ Set your team under Signing & Capabilities (a free Apple ID works), plug in the 
 1. **Account tab:** enter a username and password. An unused username gets registered on first login. There's no password reset. Soulseek's rules forbid throwaway or random usernames, so pick a real one.
 2. **Search:** results stream in over roughly 30 seconds and are grouped by folder (usually an album). Free-slot peers sort first.
 3. Open a folder, tap a file or **Download all**.
-4. Finished files go to *On My iPhone › Shoal › Music*. They show up in the Files app, and you can drop your own music there too.
+4. Finished files go to *On My iPhone › colon3 › Music*. They show up in the Files app, and you can drop your own music there too.
 5. **Library:** tap a track to play its album. Swipe to delete.
 
 ## How it works (and what it can't do)
 
-iOS apps can't usefully accept incoming connections: no port forwarding on mobile data/CGNAT, and the OS suspends the app in the background. So Shoal **never listens**.
+iOS apps can't usefully accept incoming connections: no port forwarding on mobile data/CGNAT, and the OS suspends the app in the background. So colon3 **never listens**.
 
-- **Receiving search results and files:** a peer that can't reach us asks the server to relay a `ConnectToPeer`. Shoal dials out to that peer and sends `PierceFireWall`. This only works if *the peer* has an open port, which most dedicated sharers do.
-- **Requesting downloads:** Shoal opens a direct connection (`GetPeerAddress` → `PeerInit`) and sends `QueueUpload`. Any peer that just sent us results is reachable, so this works.
+- **Receiving search results and files:** a peer that can't reach us asks the server to relay a `ConnectToPeer`. colon3 dials out to that peer and sends `PierceFireWall`. This only works if *the peer* has an open port, which most dedicated sharers do.
+- **Requesting downloads:** colon3 opens a direct connection (`GetPeerAddress` → `PeerInit`) and sends `QueueUpload`. Any peer that just sent us results is reachable, so this works.
 - **Peers who are also firewalled** can't exchange anything with us. Their results never arrive, so you won't see them.
 - **Background:** transfers stall when iOS suspends the app. Playing music keeps the app alive (background audio mode), so downloads continue while you listen. Partial files are kept in Application Support/Incomplete, and retrying resumes from where the transfer stopped.
-- **Sharing back:** downloaded music is shared under a virtual `Shoal\…` folder. Shoal answers browse requests and serves uploads one at a time, but only to peers it can connect to directly. The distributed search network is not joined, so other users' searches won't find your files.
+- **Sharing back:** downloaded music is shared under a virtual `colon3\…` folder. colon3 answers browse requests and serves uploads one at a time, but only to peers it can connect to directly. The distributed search network is not joined, so other users' searches won't find your files.
 - **Formats:** "Playable formats only" (on by default) hides what AVPlayer can't decode on iOS: Ogg Vorbis, Opus outside CAF, WMA, APE.
 
 Protocol details follow Nicotine+'s [`SLSKPROTOCOL.md`](https://github.com/nicotine-plus/nicotine-plus/blob/master/doc/SLSKPROTOCOL.md). The client logs in with major version 177, which the doc reserves for experimental clients.

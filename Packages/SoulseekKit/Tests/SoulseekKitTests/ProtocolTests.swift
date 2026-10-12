@@ -178,7 +178,7 @@ final class ProtocolTests: XCTestCase {
 
     func testSharedFileListPayloadMatchesProtocolLayout() throws {
         let message = PeerMessage.sharedFileListResponse(folders: [
-            SharedFolder(name: "Shoal\\Album", files: [SharedFile(path: "song.mp3", size: 5000)]),
+            SharedFolder(name: "colon3\\Album", files: [SharedFile(path: "song.mp3", size: 5000)]),
         ])
         let frame = try body(try message.frame().hexString)
         var reader = ByteReader(frame)

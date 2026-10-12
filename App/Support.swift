@@ -3,7 +3,7 @@ import Security
 
 /// Password storage. Works with free-account sideloading (no extra entitlements needed).
 enum Keychain {
-    private static let service = "shoal.soulseek"
+    private static let service = "colon3.soulseek"
 
     static func save(_ value: String, account: String) {
         delete(account: account)
