@@ -96,6 +96,7 @@ public final class SoulseekClient: @unchecked Sendable {
     private var uploadQueue: [UploadJob] = []
     private var activeUpload: UploadJob?
     private var completedUploads: UInt32 = 0
+    private var folderBrowses: [UInt32: FolderBrowse] = [:]
 
     public init(downloadDirectory: URL, incompleteDirectory: URL) {
         self.downloadDirectory = downloadDirectory
@@ -160,6 +161,29 @@ public final class SoulseekClient: @unchecked Sendable {
                 if case let .downloading(linkID) = link.role, linkID == id { self.closeFile(link, reason: nil) }
             }
         }
+    }
+
+    /// Lists a peer's folder (and its subfolders). `completion` runs on the main queue with full
+    /// virtual paths, or nil if the peer can't be reached or doesn't answer within 30 seconds.
+    public func browseFolder(username: String, folder: String, completion: @escaping ([SharedFile]?) -> Void) {
+        queue.async {
+            guard self.isLoggedIn else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let token = UInt32.random(in: 1..<UInt32.max)
+            self.folderBrowses[token] = FolderBrowse(username: username, folder: folder, completion: completion)
+            self.sendToPeer(username, [.folderContentsRequest(token: token, folder: folder)],
+                            onFailure: { [weak self] in self?.finishBrowse(token: token, files: nil) })
+            self.queue.asyncAfter(deadline: .now() + 30) { [weak self] in
+                self?.finishBrowse(token: token, files: nil)
+            }
+        }
+    }
+
+    private func finishBrowse(token: UInt32, files: [SharedFile]?) {
+        guard let browse = folderBrowses.removeValue(forKey: token) else { return }
+        DispatchQueue.main.async { browse.completion(files) }
     }
 
     public func updateShares(_ list: [LocalShare]) {
@@ -230,6 +254,7 @@ public final class SoulseekClient: @unchecked Sendable {
             }
         }
         uploadQueue.removeAll()
+        for token in Array(folderBrowses.keys) { finishBrowse(token: token, files: nil) }
         activeUpload = nil
         emit(.state(newState))
     }
@@ -525,6 +550,21 @@ public final class SoulseekClient: @unchecked Sendable {
             if let index = uploadQueue.firstIndex(where: { $0.username == username && $0.path == filename }) {
                 sendToPeer(username, [.placeInQueueResponse(filename: filename, place: UInt32(index + 1))])
             }
+
+        case let .folderContentsRequest(token, folder):
+            let folders = sharedFolders().filter { $0.name == folder || $0.name.hasPrefix(folder + "\\") }
+            sendToPeer(username, [.folderContentsResponse(token: token, folder: folder, folders: folders)])
+
+        case let .folderContentsResponse(token, _, folders):
+            guard let browse = folderBrowses[token], browse.username == username else { return }
+            let files = folders.flatMap { entry in
+                entry.files.map { file in
+                    var full = file
+                    full.path = entry.name.isEmpty ? file.path : entry.name + "\\" + file.path
+                    return full
+                }
+            }
+            finishBrowse(token: token, files: files)
 
         case .sharedFileListResponse, .userInfoResponse, .unknown:
             break
@@ -1000,6 +1040,12 @@ private struct DownloadRecord {
     var received: UInt64 = 0
     var token: UInt32?
     var retries = 0
+}
+
+private struct FolderBrowse {
+    let username: String
+    let folder: String
+    let completion: ([SharedFile]?) -> Void
 }
 
 private struct UploadJob {

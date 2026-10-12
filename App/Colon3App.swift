@@ -2,29 +2,52 @@ import SwiftUI
 
 @main
 struct Colon3App: App {
-    @StateObject private var library: Library
-    @StateObject private var model: AppModel
-    @StateObject private var player = Player()
+    @StateObject private var library: LibraryStore
+    @StateObject private var soulseek: SoulseekModel
+    @StateObject private var player: Player
+    @StateObject private var favorites = FavoritesStore()
+    @StateObject private var lastfm: LastFM
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        let library = Library()
+        let library = LibraryStore()
+        let player = Player(equalizer: Equalizer())
+        let lastfm = LastFM()
+        player.library = library
+        player.scrobbler = lastfm
         _library = StateObject(wrappedValue: library)
-        _model = StateObject(wrappedValue: AppModel(library: library))
+        _soulseek = StateObject(wrappedValue: SoulseekModel(library: library))
+        _player = StateObject(wrappedValue: player)
+        _lastfm = StateObject(wrappedValue: lastfm)
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(model)
+                .environmentObject(soulseek)
                 .environmentObject(library)
                 .environmentObject(player)
-                .onAppear { model.start() }
+                .environmentObject(player.clock)
+                .environmentObject(favorites)
+                .environmentObject(lastfm)
+                .tint(.pink)
+                .onAppear {
+                    soulseek.start()
+                    lastfm.flush()
+                }
+                .onOpenURL { url in
+                    // "Open in colon3" / "Copy to colon3" from Files or another app.
+                    Task {
+                        _ = await library.importItems([url])
+                        if url.path.contains("/Documents/Inbox/") { try? FileManager.default.removeItem(at: url) }
+                    }
+                }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                model.reconnectIfNeeded()
+                soulseek.reconnectIfNeeded()
                 library.rescan()
+                lastfm.flush()
             }
         }
     }

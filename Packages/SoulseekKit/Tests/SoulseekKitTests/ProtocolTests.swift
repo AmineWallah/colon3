@@ -176,6 +176,36 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(place, 7)
     }
 
+    func testFolderContentsRequestMatchesNicotine() throws {
+        let frame = try PeerMessage.folderContentsRequest(token: 777, folder: "Music\\Aphex Twin\\SAW").frame()
+        XCTAssertEqual(frame.hexString, Fixtures.folderContentsRequest)
+        guard case let .folderContentsRequest(token, folder) = try PeerMessage.decode(body(Fixtures.folderContentsRequest)) else {
+            return XCTFail("Wrong message")
+        }
+        XCTAssertEqual(token, 777)
+        XCTAssertEqual(folder, "Music\\Aphex Twin\\SAW")
+    }
+
+    func testDecodeFolderContentsResponse() throws {
+        guard case let .folderContentsResponse(token, folder, folders) =
+                try PeerMessage.decode(body(Fixtures.folderContentsResponse)) else {
+            return XCTFail("Wrong message")
+        }
+        XCTAssertEqual(token, 777)
+        XCTAssertEqual(folder, "Music\\Aphex Twin\\SAW")
+        XCTAssertEqual(folders.count, 2)
+        XCTAssertEqual(folders[0].files.map(\.path), ["01 - Xtal.flac", "cover.jpg"])
+        XCTAssertEqual(folders[0].files[0].attributes, FileAttributes(duration: 294, sampleRate: 44100, bitDepth: 16))
+        XCTAssertEqual(folders[1].name, "Music\\Aphex Twin\\SAW\\Scans")
+
+        // Round trip through our encoder.
+        let encoded = try PeerMessage.folderContentsResponse(token: token, folder: folder, folders: folders).frame()
+        guard case let .folderContentsResponse(_, _, again) = try PeerMessage.decode(body(encoded.hexString)) else {
+            return XCTFail("Wrong message")
+        }
+        XCTAssertEqual(again, folders)
+    }
+
     func testSharedFileListPayloadMatchesProtocolLayout() throws {
         let message = PeerMessage.sharedFileListResponse(folders: [
             SharedFolder(name: "colon3\\Album", files: [SharedFile(path: "song.mp3", size: 5000)]),

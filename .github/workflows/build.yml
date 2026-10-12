@@ -57,6 +57,13 @@ jobs:
           echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version $version (build $GITHUB_RUN_NUMBER)"
 
+      - name: Use the newest Xcode on the runner
+        # Xcode 26+ builds the native Liquid Glass mini player; older ones fall back to a floating pill.
+        run: |
+          latest="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | grep -vi beta | sort -V | tail -1)"
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest/Contents/Developer"; fi
+          xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

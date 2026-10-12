@@ -3,7 +3,7 @@ name: colon3
 options:
   bundleIdPrefix: com.aminewallah
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "18.0"
   createIntermediateGroups: true
 
 packages:
@@ -31,10 +31,23 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        # Lets Files and other apps "Open in" / "Copy to" colon3.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
+              - public.mp3
+              - public.mpeg-4-audio
+              - com.apple.m4a-audio
+              - org.xiph.flac
+              - com.microsoft.waveform-audio
+              - public.aiff-audio
+              - public.aifc-audio
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"

@@ -7,6 +7,8 @@ struct FolderResult: Identifiable {
     let username: String
     let folder: String
     var files: [SharedFile]
+    /// Image files seen in this folder (usually only when the search terms matched the folder name).
+    var images: [SharedFile] = []
     let slotFree: Bool
     let speed: UInt32
     let queueLength: UInt32
@@ -22,6 +24,9 @@ struct FolderResult: Identifiable {
     }
 
     var totalSize: UInt64 { files.reduce(0) { $0 + $1.size } }
+
+    /// "artist album" guess for an online cover lookup.
+    var coverQuery: String { CoverLookup.query(forFolderPath: folder) }
 
     var formatSummary: String {
         let extensions = Set(files.map { $0.fileExtension.uppercased() })
@@ -43,6 +48,12 @@ struct DownloadItem: Identifiable {
     var size: UInt64
 
     var filename: String { SharedFile(path: id.path, size: size).filename }
+    var folderPath: String { SharedFile(path: id.path, size: size).folder }
+
+    /// Cover images fetched alongside albums; kept out of the downloads list.
+    var isArtwork: Bool {
+        LibraryStore.imageExtensions.contains(SharedFile(path: id.path, size: size).fileExtension)
+    }
 
     var progress: Double {
         size > 0 ? min(1, Double(received) / Double(size)) : 0
@@ -56,7 +67,8 @@ struct DownloadItem: Identifiable {
     }
 }
 
-final class AppModel: ObservableObject {
+@MainActor
+final class SoulseekModel: ObservableObject {
     @Published private(set) var connection: ClientState = .disconnected
     @Published private(set) var results: [FolderResult] = []
     @Published private(set) var responseCount = 0
@@ -69,18 +81,16 @@ final class AppModel: ObservableObject {
     }
 
     let client: SoulseekClient
-    let library: Library
+    let library: LibraryStore
 
     private var searchToken: UInt32?
     private var responses: [SearchResponse] = []
     private var pendingResponses: [SearchResponse] = []
     private var flushScheduled = false
     private var started = false
+    private var coverRequested = Set<String>()
 
-    /// Formats AVPlayer can play on iOS. Ogg/Opus/WMA are skipped in "audio only" mode.
-    static let playableExtensions: Set<String> = ["mp3", "m4a", "aac", "alac", "flac", "wav", "aif", "aiff", "caf"]
-
-    init(library: Library) {
+    init(library: LibraryStore) {
         self.library = library
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         client = SoulseekClient(downloadDirectory: library.root,
@@ -95,7 +105,8 @@ final class AppModel: ObservableObject {
 
     var isLoggedIn: Bool { connection == .loggedIn }
 
-    var activeDownloadCount: Int { downloads.filter(\.isActive).count }
+    var activeDownloadCount: Int { downloads.filter { $0.isActive && !$0.isArtwork }.count }
+    var visibleDownloads: [DownloadItem] { downloads.filter { !$0.isArtwork } }
 
     func start() {
         guard !started else { return }
@@ -156,9 +167,13 @@ final class AppModel: ObservableObject {
 
     private func rebuildResults() {
         var folders: [String: FolderResult] = [:]
+        var images: [String: [SharedFile]] = [:]
         for response in responses {
+            for file in response.files where LibraryStore.imageExtensions.contains(file.fileExtension) {
+                images[response.username + "|" + file.folder, default: []].append(file)
+            }
             let files = audioOnly
-                ? response.files.filter { Self.playableExtensions.contains($0.fileExtension) }
+                ? response.files.filter { LibraryStore.audioExtensions.contains($0.fileExtension) }
                 : response.files
             for file in files {
                 let key = response.username + "|" + file.folder
@@ -173,6 +188,7 @@ final class AppModel: ObservableObject {
         results = folders.values
             .map { folder in
                 var sorted = folder
+                sorted.images = images[folder.id] ?? []
                 sorted.files.sort { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
                 return sorted
             }
@@ -184,12 +200,50 @@ final class AppModel: ObservableObject {
 
     // MARK: Downloads
 
-    func download(_ file: SharedFile, from username: String) {
+    func download(_ file: SharedFile, from username: String, knownImages: [SharedFile] = []) {
         client.download(username: username, file: file)
+        if LibraryStore.audioExtensions.contains(file.fileExtension) {
+            fetchCover(username: username, folder: file.folder, knownImages: knownImages)
+        }
     }
 
     func downloadFolder(_ folder: FolderResult) {
         folder.files.forEach { client.download(username: folder.username, file: $0) }
+        fetchCover(username: folder.username, folder: folder.folder, knownImages: folder.images)
+    }
+
+    /// Grabs the album's cover image from the peer so the library has local art. Uses images
+    /// already seen in search results, otherwise asks the peer for the folder listing.
+    private func fetchCover(username: String, folder: String, knownImages: [SharedFile]) {
+        let key = username + "|" + folder
+        guard !coverRequested.contains(key) else { return }
+        coverRequested.insert(key)
+
+        if let best = Self.bestCover(knownImages) {
+            client.download(username: username, file: best)
+            return
+        }
+        client.browseFolder(username: username, folder: folder) { [weak self] files in
+            guard let self, let files else { return }
+            let images = files.filter { $0.folder == folder && LibraryStore.imageExtensions.contains($0.fileExtension) }
+            if let best = Self.bestCover(images) {
+                self.client.download(username: username, file: best)
+            }
+        }
+    }
+
+    static func bestCover(_ images: [SharedFile]) -> SharedFile? {
+        let usable = images.filter { $0.size > 0 && $0.size < 15_000_000 }
+        let preferred = ["cover", "folder", "front", "album", "artwork"]
+        for name in preferred {
+            if let match = usable.first(where: { ($0.filename as NSString).deletingPathExtension.lowercased() == name }) {
+                return match
+            }
+        }
+        for name in preferred {
+            if let match = usable.first(where: { $0.filename.lowercased().contains(name) }) { return match }
+        }
+        return usable.count <= 3 ? usable.max { $0.size < $1.size } : nil
     }
 
     func retry(_ item: DownloadItem) { client.retry(item.id) }
@@ -220,7 +274,10 @@ final class AppModel: ObservableObject {
             pendingResponses.append(response)
             if !flushScheduled {
                 flushScheduled = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.flushResponses() }
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    self?.flushResponses()
+                }
             }
 
         case let .download(update):
@@ -232,7 +289,17 @@ final class AppModel: ObservableObject {
                 downloads.insert(DownloadItem(id: update.id, state: update.state,
                                               received: update.received, size: update.size), at: 0)
             }
-            if case .completed = update.state { library.rescan() }
+            if case .completed = update.state {
+                if LibraryStore.imageExtensions.contains(SharedFile(path: update.id.path, size: 0).fileExtension) {
+                    let library = self.library
+                    Task {
+                        await ArtworkStore.shared.invalidateFolders()
+                        library.bumpArtwork()
+                    }
+                } else {
+                    library.rescan()
+                }
+            }
 
         case let .log(line):
             appendLog(line)

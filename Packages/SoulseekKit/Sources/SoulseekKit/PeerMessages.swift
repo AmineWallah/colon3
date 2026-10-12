@@ -43,6 +43,9 @@ public enum PeerMessage: Sendable {
     case sharedFileListResponse(folders: [SharedFolder])
     case fileSearchResponse(SearchResponse)
     case userInfoRequest
+    case folderContentsRequest(token: UInt32, folder: String)
+    /// `folders` holds the requested folder and its subfolders; file paths are bare filenames.
+    case folderContentsResponse(token: UInt32, folder: String, folders: [SharedFolder])
     case userInfoResponse(description: String, totalUploads: UInt32, queueSize: UInt32, slotsFree: Bool)
     case transferRequest(direction: TransferDirection, token: UInt32, filename: String, size: UInt64?)
     case transferResponse(token: UInt32, allowed: Bool, reason: String?, size: UInt64?)
@@ -60,6 +63,8 @@ public enum PeerMessage: Sendable {
         case .fileSearchResponse: return 9
         case .userInfoRequest: return 15
         case .userInfoResponse: return 16
+        case .folderContentsRequest: return 36
+        case .folderContentsResponse: return 37
         case .transferRequest: return 40
         case .transferResponse: return 41
         case .queueUpload: return 43
@@ -97,6 +102,21 @@ public enum PeerMessage: Sendable {
             writer.u32(response.averageSpeed)
             writer.u32(response.queueLength)
             writer.u32(0)
+            return try Zlib.compress(writer.data)
+
+        case let .folderContentsRequest(token, folder):
+            writer.u32(token)
+            writer.string(folder)
+
+        case let .folderContentsResponse(token, folder, folders):
+            writer.u32(token)
+            writer.string(folder)
+            writer.u32(UInt32(folders.count))
+            for entry in folders {
+                writer.string(entry.name)
+                writer.u32(UInt32(entry.files.count))
+                for file in entry.files { writer.fileEntry(file) }
+            }
             return try Zlib.compress(writer.data)
 
         case let .userInfoResponse(description, totalUploads, queueSize, slotsFree):
@@ -176,6 +196,24 @@ public enum PeerMessage: Sendable {
 
         case 15:
             return .userInfoRequest
+
+        case 36:
+            let token = try reader.u32()
+            let folder = try reader.string()
+            return .folderContentsRequest(token: token, folder: folder)
+
+        case 37:
+            var inner = ByteReader(try Zlib.decompress(reader.rest()))
+            let token = try inner.u32()
+            let folder = try inner.string()
+            let folderCount = try inner.u32()
+            var folders: [SharedFolder] = []
+            for _ in 0..<folderCount {
+                let name = try inner.string().replacingOccurrences(of: "/", with: "\\")
+                let files = try inner.fileList()
+                folders.append(SharedFolder(name: name, files: files))
+            }
+            return .folderContentsResponse(token: token, folder: folder, folders: folders)
 
         case 40:
             let rawDirection = try reader.u32()

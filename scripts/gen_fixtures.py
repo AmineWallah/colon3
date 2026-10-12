@@ -40,6 +40,20 @@ def fileinfo(name, size, attrs):
 shared = u32(1) + s("colon3\\Album") + u32(1) + fileinfo("song.mp3", 5000, []) + u32(0) + u32(0)
 fx["sharedFileListPayloadUncompressed"] = shared
 
+fx["folderContentsRequest"] = peer_frame(36, m.FolderContentsRequest(directory="Music\\Aphex Twin\\SAW", token=777).make_network_message())
+# Nicotine+ has no encoder for the response; build it per SLSKPROTOCOL.md and check it with Nicotine's parser below.
+folder_payload = u32(777) + s("Music\\Aphex Twin\\SAW") + u32(2) \
+    + s("Music\\Aphex Twin\\SAW") + u32(2) + fileinfo("01 - Xtal.flac", 31457280, [(1, 294), (4, 44100), (5, 16)]) + fileinfo("cover.jpg", 123456, []) \
+    + s("Music\\Aphex Twin\\SAW\\Scans") + u32(1) + fileinfo("back.png", 2000, [])
+fx["folderContentsResponse"] = peer_frame(37, zlib.compress(folder_payload))
+
+parsed = m.FolderContentsResponse(msg_content=memoryview(zlib.compress(folder_payload)))
+parsed.username = "peer"
+parsed.allowed_responses = {"peer" + "Music\\Aphex Twin\\SAW"}
+parsed.parse_network_message()
+assert parsed.token == 777 and parsed.dir == "Music\\Aphex Twin\\SAW", (parsed.token, parsed.dir)
+assert len(parsed.list) == 2, parsed.list
+
 print("// Generated from Nicotine+ pynicotine/slskmessages.py encoders (and hand-built server replies).")
 print("// Regenerate with scripts/gen_fixtures.py; do not edit by hand.")
 print("enum Fixtures {")

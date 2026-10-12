@@ -1,13 +1,24 @@
 # colon3 (:3)
 
-A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library with lock-screen controls. No server or desktop client in between.
+A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
+
+- **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs and Artists views, favourites, multi-select, and import from Files or other apps.
+- **Artwork:** cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover from the peer too.
+- **Player:** Apple Music-style full screen with synced lyrics (LRCLIB), queue editing, shuffle and repeat, AirPlay, and the Liquid Glass mini player on iOS 26+.
+- **Sound:** 10-band EQ with presets. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
+- **Last.fm** scrobbling with your own API key.
 
 Meant for sideloading. It won't pass App Store review.
 
 ## Layout
 
 ```
-App/                       SwiftUI app: search, downloads, library, player, account
+App/
+  Library/                 scanning, metadata (incl. a small FLAC tag reader), albums, artwork, favourites
+  Playback/                AVAudioEngine + EQ backend, AVPlayer spatial backend, queue
+  Services/                LRCLIB lyrics, Last.fm, keychain and settings
+  Soulseek/                search results, downloads, cover fetching
+  Views/                   SwiftUI screens
 Packages/SoulseekKit/      Protocol package (no dependencies)
   Sources/SoulseekKit/
     Bytes, Framing, Zlib, MD5        primitives, all Linux-testable
@@ -108,7 +119,12 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
 2. **Search:** results stream in over roughly 30 seconds and are grouped by folder (usually an album). Free-slot peers sort first.
 3. Open a folder, tap a file or **Download all**.
 4. Finished files go to *On My iPhone › colon3 › Music*. They show up in the Files app, and you can drop your own music there too.
-5. **Library:** tap a track to play its album. Swipe to delete.
+5. **Library:** tap an album, or long-press anything for Play Next, Add to Queue, Favorite and Delete. **Select** enables multi-select.
+6. **Player:** tap the mini player. The speech-bubble button shows lyrics (tap a line to jump there) and the list button the queue. The ••• menu opens the equalizer.
+
+### Last.fm
+
+Create an API account at [last.fm/api/account/create](https://www.last.fm/api/account/create) (any app name works). In Settings › Last.fm, enter the API key, shared secret, your username and password. The password is only used once to get a session key. Everything is stored in the Keychain. Scrobbles made offline are queued and sent later.
 
 ## How it works (and what it can't do)
 
