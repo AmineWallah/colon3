@@ -226,7 +226,11 @@ struct SoftwareUpdateSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Installed", value: "\(updates.currentVersion) (\(updates.currentBuild))")
+            LabeledContent("Installed", value: "\(updates.currentVersion) (\(updates.currentBuild))"
+                           + (updates.builtChannel == .beta ? " Beta" : ""))
+            Picker("Channel", selection: $updates.channel) {
+                ForEach(UpdateChecker.Channel.allCases) { Text($0.label).tag($0) }
+            }
             status
             Button {
                 Task { await updates.check() }
@@ -238,7 +242,7 @@ struct SoftwareUpdateSection: View {
         } header: {
             Text("Software Update")
         } footer: {
-            Text("Updates come from your install page (\(updates.source)). Installing keeps your music and settings; colon3 closes while iOS installs it.")
+            Text("Beta follows the beta branch, Stable follows main. Updates come from \(updates.source). Installing keeps your music and settings; colon3 closes while iOS installs it.")
         }
     }
 

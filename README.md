@@ -70,9 +70,9 @@ Homebrew no longer supports Intel Macs, which includes QEMU macOS VMs. Install X
 |---|---|---|
 | Protocol tests | always | `swift test` for SoulseekKit on Linux |
 | Build unsigned IPA | always | XcodeGen + `xcodebuild` on a macOS runner. Version comes from `MARKETING_VERSION` in `project.yml` (or the tag), build number from the run number. The IPA is kept as a run artifact for 30 days. |
-| Sign and stage install page | pushes to `main`, if signing secrets are set | Signs the IPA with zsign and the distribution cert, checks the cert's revocation status (shown in the run summary), and builds the install page |
+| Sign and stage install page | pushes to `main` or `beta`, if signing secrets are set | Signs the IPA with zsign and the distribution cert, checks the cert's revocation status (shown in the run summary), and builds the install page: `main` at the site root, `beta` under `/beta/` |
 | Deploy install page | after signing | Publishes the page to GitHub Pages |
-| GitHub Release | tags `v*` | Attaches the unsigned IPA to a release |
+| GitHub Release | tags `v*` | Attaches the unsigned IPA to a release (a pre-release for tags like `v0.4.0-beta.1`) |
 
 The macOS runner is only free for public repos.
 
@@ -94,6 +94,18 @@ Things to know:
 - **The page is public.** Pages on a public repo is open to anyone who finds the URL. It's marked `noindex`, but anyone with the link can install your signed build. That's harmless for you, but wide distribution under a shared enterprise cert makes revocation more likely.
 - **Secrets never reach pull requests.** The signing job only runs for pushes to `main`.
 - **If the cert gets revoked,** the run summary's certificate check shows it. Replace the three secrets with the new cert and re-run the workflow.
+
+### Beta channel
+
+Push risky changes to a `beta` branch first. Its signed build goes to `<pages url>/beta/` and leaves the stable page alone; each deploy copies the other channel's files from the live site so both stay up. Builds report their channel, and Settings › Software Update follows the matching page (switchable between Stable and Beta).
+
+One-time: Settings › Environments › `github-pages` › Deployment branches and tags › add `beta`, or its deploy is rejected.
+
+When the beta works, fast-forward main to it:
+
+```sh
+git switch main && git merge --ff-only beta && git push
+```
 
 ### Releases
 

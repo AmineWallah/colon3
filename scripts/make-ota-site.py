@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True, help="output folder (created; existing files are replaced)")
     parser.add_argument("--commit", default="", help="commit hash to show on the page")
     parser.add_argument("--notes", default="", help="what changed (the app shows it in Software Update)")
+    parser.add_argument("--channel", default="stable", choices=["stable", "beta"], help="labels the page and version.json")
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -79,13 +80,14 @@ def main() -> None:
     commit = html.escape(args.commit[:7])
     size_mb = args.ipa.stat().st_size / 1_000_000
 
+    label = " Beta" if args.channel == "beta" else ""
     page = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Install {html.escape(name)}</title>
+<title>Install {html.escape(name)}{label}</title>
 <style>
   :root {{ color-scheme: light dark; --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --accent: #0a84ff; }}
   @media (prefers-color-scheme: dark) {{ :root {{ --bg: #000; --card: #1c1c1e; --text: #f5f5f7; --muted: #98989d; }} }}
@@ -103,7 +105,7 @@ def main() -> None:
 <body>
 <main>
   <div class="card">
-    <h1>{html.escape(name)}</h1>
+    <h1>{html.escape(name)}{f' <span style="color:#ff9500;font-size:20px">BETA</span>' if label else ""}</h1>
     <p class="meta">Version {html.escape(version)} (build {html.escape(build)}) · {size_mb:.1f} MB<br>
     Built {built}{f" · <code>{commit}</code>" if commit else ""}</p>
     <a class="install" href="{html.escape(install_url)}">Install</a>
@@ -123,6 +125,7 @@ def main() -> None:
     status = {
         "version": version,
         "build": build,
+        "channel": args.channel,
         "built": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "commit": args.commit[:7],
         "notes": args.notes.strip()[:4000],

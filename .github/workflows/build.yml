@@ -7,7 +7,8 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    # main → the stable install page; beta → a separate beta page at /beta/.
+    branches: [main, beta]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -42,6 +43,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       build: ${{ steps.version.outputs.build }}
+      channel: ${{ steps.version.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,9 +55,15 @@ jobs:
           else
             version="$(sed -nE 's/^ *MARKETING_VERSION: *"?([^"]+)"?.*/\1/p' project.yml | head -1)"
           fi
+          # Beta branch and tags like v0.4.0-beta.1 build the beta channel.
+          channel=stable
+          if [[ "$GITHUB_REF" == refs/heads/beta || "$version" == *-* ]]; then channel=beta; fi
+          # iOS wants plain numbers here: v0.4.0-beta.1 → 0.4.0.
+          version="${version%%-*}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "Version $version (build $GITHUB_RUN_NUMBER)"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Version $version (build $GITHUB_RUN_NUMBER, $channel)"
 
       - name: Use the newest Xcode on the runner
         # Xcode 26+ builds the native Liquid Glass mini player; older ones fall back to a floating pill.
@@ -82,6 +90,7 @@ jobs:
             -derivedDataPath build \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
+            COLON3_CHANNEL="${{ steps.version.outputs.channel }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -110,7 +119,7 @@ jobs:
   sign:
     name: Sign and stage install page
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta')
     runs-on: ubuntu-latest
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
@@ -190,15 +199,27 @@ jobs:
 
       - name: Build install page
         if: steps.check.outputs.enabled == 'true'
+        env:
+          BASE: ${{ steps.pages.outputs.base_url }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
+          # Pages hosts one site, so each deploy carries both channels: this build's files, plus
+          # the other channel's current files copied from the live site.
+          if [ "$CHANNEL" = beta ]; then mine=beta/; other=""; else mine=""; other=beta/; fi
+          files="index.html manifest.plist version.json colon3.ipa"
+          mkdir -p "site/$other"
+          for f in $files; do
+            curl -fsSL "$BASE/$other$f" -o "site/$other$f" || rm -f "site/$other$f"
+          done
           # Read from git rather than the event payload so the message never becomes shell code.
           notes="$(git log -1 --format=%B)"
           python3 scripts/make-ota-site.py colon3-signed.ipa \
-            --base-url "${{ steps.pages.outputs.base_url }}" \
-            --out site \
+            --base-url "$BASE/${mine%/}" \
+            --out "site/$mine" \
+            --channel "$CHANNEL" \
             --commit "$GITHUB_SHA" \
             --notes "$notes"
-          echo "Install page: ${{ steps.pages.outputs.base_url }}/" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install page ($CHANNEL): $BASE/$mine" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.check.outputs.enabled == 'true'
@@ -214,6 +235,10 @@ jobs:
     needs: sign
     if: needs.sign.outputs.enabled == 'true'
     runs-on: ubuntu-latest
+    # main and beta deploy one after the other, never at once.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
@@ -240,9 +265,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          file="dist/colon3-${{ needs.build.outputs.version }}-unsigned.ipa"
+          file="dist/colon3-${GITHUB_REF_NAME#v}-unsigned.ipa"
           mv dist/colon3.ipa "$file"
+          args=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
           gh release create "$GITHUB_REF_NAME" "$file" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "colon3 ${{ needs.build.outputs.version }}" \
-            --generate-notes
+            --title "colon3 ${GITHUB_REF_NAME#v}" \
+            --generate-notes "${args[@]}"

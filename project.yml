@@ -27,6 +27,8 @@ targets:
         # Filled from MARKETING_VERSION / CURRENT_PROJECT_VERSION below; CI overrides both.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # "stable" or "beta"; CI sets it from the branch. Picks the default update channel.
+        Colon3Channel: "$(COLON3_CHANNEL)"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
@@ -59,6 +61,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.4.0"
         CURRENT_PROJECT_VERSION: "1"
+        COLON3_CHANNEL: stable
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
