@@ -23,6 +23,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                SoftwareUpdateSection()
+
                 Section {
                     NavigationLink { StatsView() } label: { StatsPreview() }
                 }
@@ -215,6 +217,87 @@ struct LastFMSection: View {
             }
             connecting = false
         }
+    }
+}
+
+struct SoftwareUpdateSection: View {
+    @EnvironmentObject private var updates: UpdateChecker
+    @State private var showNotes = false
+
+    var body: some View {
+        Section {
+            LabeledContent("Installed", value: "\(updates.currentVersion) (\(updates.currentBuild))")
+            status
+            Button {
+                Task { await updates.check() }
+            } label: {
+                Label("Check Now", systemImage: "arrow.clockwise")
+            }
+            .disabled(updates.state == .checking)
+            Toggle("Check Automatically", isOn: $updates.automatic)
+        } header: {
+            Text("Software Update")
+        } footer: {
+            Text("Updates come from your install page (\(updates.source)). Installing keeps your music and settings; colon3 closes while iOS installs it.")
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch updates.state {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Checking…").foregroundStyle(.secondary)
+            }
+        case .upToDate:
+            VStack(alignment: .leading, spacing: 2) {
+                Label("colon3 is up to date", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                if let checked = updates.lastChecked {
+                    Text("Checked \(checked.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case let .available(remote):
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Update available", systemImage: "arrow.down.app.fill")
+                    .font(.headline)
+                    .foregroundStyle(.tint)
+                Text(details(remote))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                let notes = remote.cleanNotes
+                if !notes.isEmpty {
+                    Text(notes)
+                        .font(.footnote)
+                        .lineLimit(showNotes ? nil : 3)
+                        .onTapGesture { showNotes.toggle() }
+                }
+            }
+            .padding(.vertical, 4)
+            Button {
+                updates.install(remote)
+            } label: {
+                Text("Install Update")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .listRowSeparator(.hidden)
+            Button("Open Install Page") { updates.openPage() }
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        }
+    }
+
+    private func details(_ remote: UpdateChecker.Remote) -> String {
+        var parts = ["Version \(remote.version) (\(remote.build))"]
+        if let date = remote.builtDate { parts.append(date.formatted(date: .abbreviated, time: .shortened)) }
+        if let size = remote.size { parts.append(Formatting.bytes(UInt64(max(size, 0)))) }
+        return parts.joined(separator: " · ")
     }
 }
 

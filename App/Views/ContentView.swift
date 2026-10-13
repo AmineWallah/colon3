@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var updates: UpdateChecker
     @AppStorage(AccentPalette.storageKey) private var accentHex = AccentPalette.defaultHex
 
     var body: some View {
@@ -22,6 +23,7 @@ struct ContentView: View {
             Tab("Settings", systemImage: "gearshape", value: AppTab.settings) {
                 SettingsView()
             }
+            .badge(updates.isUpdateAvailable ? 1 : 0)
         }
         .modifier(TabAccessoryMiniPlayer(isVisible: player.current != nil, open: openPlayer))
         .modifier(RouterPresenters(active: !router.showPlayer))

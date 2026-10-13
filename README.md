@@ -125,6 +125,10 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
 5. **Library:** tap an album, or long-press anything for Play Next, Add to Queue, Favorite and Delete. **Select** enables multi-select.
 6. **Player:** tap the mini player. The speech-bubble button shows lyrics (tap a line to jump there) and the list button the queue. The ••• menu opens the equalizer.
 
+### Software Update
+
+Settings › Software Update compares the installed build with `version.json`, which CI publishes next to the install page on every signed build. **Install Update** opens the over-the-air install prompt; the music library and settings are kept. The Settings tab shows a badge when an update is waiting.
+
 ### Links
 
 `colon3://player`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.

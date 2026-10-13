@@ -191,10 +191,13 @@ jobs:
       - name: Build install page
         if: steps.check.outputs.enabled == 'true'
         run: |
+          # Read from git rather than the event payload so the message never becomes shell code.
+          notes="$(git log -1 --format=%B)"
           python3 scripts/make-ota-site.py colon3-signed.ipa \
             --base-url "${{ steps.pages.outputs.base_url }}" \
             --out site \
-            --commit "$GITHUB_SHA"
+            --commit "$GITHUB_SHA" \
+            --notes "$notes"
           echo "Install page: ${{ steps.pages.outputs.base_url }}/" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-pages-artifact@v3

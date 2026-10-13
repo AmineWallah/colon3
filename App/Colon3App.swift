@@ -13,6 +13,7 @@ struct Colon3App: App {
     @StateObject private var router = AppRouter()
     @StateObject private var discord: DiscordPresence
     @StateObject private var wifi: WiFiTransferServer
+    @StateObject private var updates = UpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
 
@@ -58,9 +59,11 @@ struct Colon3App: App {
                 .environmentObject(router)
                 .environmentObject(discord)
                 .environmentObject(wifi)
+                .environmentObject(updates)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()
+                    updates.checkIfDue()
                 }
                 .onOpenURL { url in
                     // colon3:// links (Dynamic Island, Shortcuts, Back Tap) navigate.
@@ -82,6 +85,7 @@ struct Colon3App: App {
                 library.rescan()
                 lastfm.flush()
                 discord.resumeIfNeeded()
+                updates.checkIfDue()
             case .background:
                 stats.save()
             default:

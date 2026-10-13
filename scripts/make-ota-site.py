@@ -17,6 +17,7 @@ disk is served.
 import argparse
 import datetime
 import html
+import json
 import plistlib
 import shutil
 import sys
@@ -40,6 +41,7 @@ def main() -> None:
     parser.add_argument("--base-url", required=True, help="HTTPS URL the output folder will be served from")
     parser.add_argument("--out", type=Path, required=True, help="output folder (created; existing files are replaced)")
     parser.add_argument("--commit", default="", help="commit hash to show on the page")
+    parser.add_argument("--notes", default="", help="what changed (the app shows it in Software Update)")
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -116,8 +118,22 @@ def main() -> None:
 </html>
 """
     (args.out / "index.html").write_text(page, encoding="utf-8")
+
+    # Read by the app's Settings › Software Update.
+    status = {
+        "version": version,
+        "build": build,
+        "built": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "commit": args.commit[:7],
+        "notes": args.notes.strip()[:4000],
+        "size": args.ipa.stat().st_size,
+        "install": install_url,
+        "page": base_url + "/",
+    }
+    (args.out / "version.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
+
     print(f"{name} {version} ({build}), bundle {bundle_id}")
-    print(f"Wrote {args.out}/{{index.html,manifest.plist,{ipa_name}}}")
+    print(f"Wrote {args.out}/{{index.html,manifest.plist,version.json,{ipa_name}}}")
     print(f"Open {base_url}/ in Safari on the phone")
 
 
