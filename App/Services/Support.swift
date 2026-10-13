@@ -64,6 +64,23 @@ enum Formatting {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// "1 hr 12 min" / "42 minutes".
+    static func longDuration(_ seconds: Double) -> String {
+        let total = Int(seconds / 60)
+        return total >= 60 ? "\(total / 60) hr \(total % 60) min" : "\(total) minute\(total == 1 ? "" : "s")"
+    }
+
+    /// "3.2 h" / "45 min" for listening totals.
+    static func hours(_ seconds: Double) -> String {
+        if seconds >= 3600 { return String(format: "%.1f h", seconds / 3600) }
+        return "\(Int(seconds / 60)) min"
+    }
+
+    static func sampleRate(_ hertz: Double) -> String {
+        guard hertz > 0 else { return "–" }
+        return kilohertz(UInt32(hertz.rounded())) + " kHz"
+    }
+
     static func kilohertz(_ hertz: UInt32) -> String {
         let value = Double(hertz) / 1000
         return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
@@ -79,19 +96,24 @@ enum AppSettings {
     static let transferActivityKey = "transferLiveActivity"
     static let showMissingKey = "showMissingSongs"
     static let musicBrainzKey = "musicBrainzLookup"
+    /// These three default to off.
+    static let bitPerfectKey = "bitPerfect"
+    static let seedingKey = "seedingMode"
+    static let discordKey = "discordPresence"
 
     static var artworkLookupEnabled: Bool { flag(artworkLookupKey) }
     static var lyricsLookupEnabled: Bool { flag(lyricsLookupKey) }
     static var scrobblingEnabled: Bool { flag(scrobblingKey) }
+    static var seedingEnabled: Bool { UserDefaults.standard.bool(forKey: seedingKey) }
 
-    /// All switches default to on.
-    private static func flag(_ key: String) -> Bool {
+    /// Most switches default to on.
+    static func flag(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
 }
 
 enum HTTP {
-    static let userAgent = "colon3/0.2 (https://github.com/AmineWallah/colon3)"
+    static let userAgent = "colon3/0.4 (https://github.com/AmineWallah/colon3)"
 
     static func formBody(_ parameters: [String: String]) -> Data {
         // ASCII-only unreserved set; CharacterSet.alphanumerics would let accented letters through raw.

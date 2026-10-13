@@ -50,9 +50,9 @@ struct DownloadItem: Identifiable {
     var filename: String { SharedFile(path: id.path, size: size).filename }
     var folderPath: String { SharedFile(path: id.path, size: size).folder }
 
-    /// Cover images fetched alongside albums; kept out of the downloads list.
+    /// Cover images and .lrc lyrics fetched alongside albums; kept out of the downloads list.
     var isArtwork: Bool {
-        LibraryStore.imageExtensions.contains(SharedFile(path: id.path, size: size).fileExtension)
+        LibraryStore.sidecarExtensions.contains(SharedFile(path: id.path, size: size).fileExtension)
     }
 
     var progress: Double {
@@ -116,6 +116,7 @@ final class SoulseekModel: ObservableObject {
     let library: LibraryStore
     /// Set by the app; receives full folder listings for the missing-songs view.
     weak var completeness: AlbumCompletenessStore?
+    weak var stats: StatsStore?
 
     private var searchToken: UInt32?
     private var trackSearchToken: UInt32?
@@ -299,6 +300,10 @@ final class SoulseekModel: ObservableObject {
             if let best = Self.bestCover(images.isEmpty ? knownImages : images) {
                 self.client.download(username: username, file: best)
             }
+            // Synced lyrics some rippers keep next to the music; tiny, so take them all.
+            for lyrics in (files ?? []) where lyrics.folder == folder && lyrics.fileExtension == "lrc" && lyrics.size < 512_000 {
+                self.client.download(username: username, file: lyrics)
+            }
         }
     }
 
@@ -324,18 +329,60 @@ final class SoulseekModel: ObservableObject {
     func retry(_ item: DownloadItem) { client.retry(item.id) }
 
     func cancel(_ item: DownloadItem) {
-        client.cancel(item.id)
-        downloads.removeAll { $0.id == item.id }
+        remove([item.id])
+    }
+
+    /// Cancels anything still running and drops the entries. The client forgets them too, so the
+    /// same file can be downloaded again later.
+    func remove(_ ids: Set<DownloadID>) {
+        for id in ids { client.cancel(id) }
+        downloads.removeAll { ids.contains($0.id) }
+    }
+
+    /// Retries the failed ones among `ids`; returns how many.
+    @discardableResult
+    func retry(_ ids: Set<DownloadID>) -> Int {
+        var count = 0
+        for item in downloads where ids.contains(item.id) {
+            if case .failed = item.state {
+                client.retry(item.id)
+                count += 1
+            }
+        }
+        return count
     }
 
     func clearFinished() {
-        downloads.removeAll { !$0.isActive }
+        remove(Set(downloads.filter { !$0.isActive }.map(\.id)))
         uploads.removeAll { !$0.isActive }
     }
 
+    func clearCompleted() {
+        remove(Set(downloads.filter { if case .completed = $0.state { return true } else { return false } }.map(\.id)))
+    }
+
+    func clearFailed() {
+        remove(Set(downloads.filter { if case .failed = $0.state { return true } else { return false } }.map(\.id)))
+    }
+
+    func retryAllFailed() {
+        retry(Set(downloads.map(\.id)))
+    }
+
+    func cancelAllActive() {
+        remove(Set(downloads.filter(\.isActive).map(\.id)))
+    }
+
+    /// Finished downloads among `ids` that are songs in the library.
+    func libraryTracks(for ids: Set<DownloadID>) -> [Track] {
+        downloads.compactMap { item -> Track? in
+            guard ids.contains(item.id), case let .completed(url) = item.state else { return nil }
+            return library.track(at: url)
+        }
+    }
+
     func cancelAll(from username: String) {
-        for item in downloads where item.id.username == username { client.cancel(item.id) }
-        downloads.removeAll { $0.id.username == username }
+        remove(Set(downloads.filter { $0.id.username == username }.map(\.id)))
     }
 
     func retryFailed(from username: String) {
@@ -374,6 +421,13 @@ final class SoulseekModel: ObservableObject {
             }
 
         case let .download(update):
+            if case .completed = update.state, !LibraryStore.sidecarExtensions.contains(SharedFile(path: update.id.path, size: 0).fileExtension) {
+                let wasCompleted: Bool = {
+                    guard let old = downloads.first(where: { $0.id == update.id }), case .completed = old.state else { return false }
+                    return true
+                }()
+                if !wasCompleted { stats?.recordDownload(bytes: update.size, from: update.id.username) }
+            }
             if let index = downloads.firstIndex(where: { $0.id == update.id }) {
                 downloads[index].state = update.state
                 downloads[index].received = update.received
@@ -383,7 +437,10 @@ final class SoulseekModel: ObservableObject {
                                               received: update.received, size: update.size), at: 0)
             }
             if case .completed = update.state {
-                if LibraryStore.imageExtensions.contains(SharedFile(path: update.id.path, size: 0).fileExtension) {
+                let ext = SharedFile(path: update.id.path, size: 0).fileExtension
+                if ext == "lrc" {
+                    // Sidecar lyrics: nothing to rescan, LyricsView looks for them when it opens.
+                } else if LibraryStore.imageExtensions.contains(ext) {
                     let library = self.library
                     Task {
                         await ArtworkStore.shared.invalidateFolders()
@@ -395,6 +452,9 @@ final class SoulseekModel: ObservableObject {
             }
 
         case let .upload(update):
+            if update.state == .completed, uploads.first(where: { $0.id == update.id })?.state != .completed {
+                stats?.recordUpload(bytes: update.size, to: update.id.username)
+            }
             if let index = uploads.firstIndex(where: { $0.id == update.id }) {
                 uploads[index].state = update.state
                 uploads[index].sent = update.sent

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LibraryView: View {
     enum Scope: String, CaseIterable, Identifiable {
-        case albums = "Albums", songs = "Songs", artists = "Artists"
+        case albums = "Albums", songs = "Songs", artists = "Artists", playlists = "Playlists"
         var id: String { rawValue }
     }
 
@@ -20,6 +20,7 @@ struct LibraryView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var player: Player
+    @EnvironmentObject private var router: AppRouter
 
     @AppStorage("library.scope") private var scope: Scope = .albums
     @AppStorage("library.sort") private var sort: Sort = .title
@@ -27,8 +28,6 @@ struct LibraryView: View {
     @State private var query = ""
     @State private var selecting = false
     @State private var selection = Set<String>()
-    @State private var showImporter = false
-    @State private var importMessage: String?
     @State private var pendingDelete: [Track]?
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
@@ -41,17 +40,7 @@ struct LibraryView: View {
                 .toolbar { toolbar }
                 .navigationDestination(for: Album.self) { AlbumDetailView(album: $0) }
                 .navigationDestination(for: ArtistEntry.self) { ArtistDetailView(artist: $0) }
-                .fileImporter(isPresented: $showImporter, allowedContentTypes: LibraryStore.importableTypes,
-                              allowsMultipleSelection: true) { result in
-                    guard case let .success(urls) = result, !urls.isEmpty else { return }
-                    Task {
-                        let count = await library.importItems(urls)
-                        importMessage = count == 0 ? "No audio files found." : "Imported \(count) song\(count == 1 ? "" : "s")."
-                    }
-                }
-                .alert(importMessage ?? "", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
-                    Button("OK", role: .cancel) {}
-                }
+                .navigationDestination(for: PlaylistRoute.self) { PlaylistDetailView(route: $0) }
                 .safeAreaInset(edge: .bottom) {
                     if selecting { selectionBar }
                 }
@@ -73,7 +62,7 @@ struct LibraryView: View {
                                systemImage: "music.note.house")
                     .padding(.top, 60)
                 if !library.isScanning {
-                    Button("Import Music") { showImporter = true }
+                    Button("Import Music") { router.importMusic() }
                         .buttonStyle(.borderedProminent)
                 }
             }
@@ -82,6 +71,7 @@ struct LibraryView: View {
             case .albums: albumsGrid
             case .songs: songsList
             case .artists: artistsList
+            case .playlists: playlistsList
             }
         }
     }
@@ -377,6 +367,15 @@ struct LibraryView: View {
         }
     }
 
+    // MARK: Playlists
+
+    private var playlistsList: some View {
+        ScrollView {
+            scopePicker
+            PlaylistsListContent(query: query)
+        }
+    }
+
     // MARK: Selection
 
     private func toggleSelection(_ id: String) {
@@ -389,7 +388,7 @@ struct LibraryView: View {
             return filteredItems.filter { selection.contains($0.id) }.flatMap(\.tracks)
         case .songs:
             return filteredTracks.filter { selection.contains("t:" + $0.id) }
-        case .artists:
+        case .artists, .playlists:
             return []
         }
     }
@@ -402,6 +401,8 @@ struct LibraryView: View {
             Button { player.playNext(tracks); endSelection() } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Spacer()
             Button { toggleFavorites(); endSelection() } label: { Label("Favorite", systemImage: "star") }
+            Spacer()
+            Button { router.addToPlaylist(tracks); endSelection() } label: { Label("Add to Playlist", systemImage: "text.badge.plus") }
             Spacer()
             Button(role: .destructive) { pendingDelete = tracks } label: { Label("Delete", systemImage: "trash") }
         }
@@ -423,7 +424,7 @@ struct LibraryView: View {
             let tracks = selectedTracks
             let allFavorite = tracks.allSatisfy { favorites.isFavorite($0) }
             for track in tracks { favorites.set(track, favorite: !allFavorite) }
-        case .artists:
+        case .artists, .playlists:
             break
         }
     }
@@ -438,7 +439,7 @@ struct LibraryView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            if scope != .artists {
+            if scope == .albums || scope == .songs {
                 Button(selecting ? "Done" : "Select") {
                     if selecting { endSelection() } else { selecting = true }
                 }
@@ -457,9 +458,20 @@ struct LibraryView: View {
             }
             Menu {
                 Button {
-                    showImporter = true
+                    router.importMusic()
                 } label: {
                     Label("Import Files or Folders…", systemImage: "square.and.arrow.down")
+                }
+                Button {
+                    router.importPlaylist()
+                } label: {
+                    Label("Import Playlist (.m3u)…", systemImage: "music.note.list")
+                }
+                Button {
+                    router.tab = .settings
+                    router.showWiFiTransfer = true
+                } label: {
+                    Label("Wi-Fi Transfer", systemImage: "wifi")
                 }
                 Button {
                     library.rescan()

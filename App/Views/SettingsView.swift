@@ -5,6 +5,8 @@ struct SettingsView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var lastfm: LastFM
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var server: WiFiTransferServer
 
     @AppStorage(AppSettings.artworkLookupKey) private var artworkLookup = true
     @AppStorage(AppSettings.lyricsLookupKey) private var lyricsLookup = true
@@ -13,6 +15,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.transferActivityKey) private var transferActivity = true
     @AppStorage(AppSettings.showMissingKey) private var showMissing = true
     @AppStorage(AppSettings.musicBrainzKey) private var musicBrainz = true
+    @AppStorage(AppSettings.seedingKey) private var seeding = false
 
     @State private var username = ""
     @State private var password = ""
@@ -20,18 +23,31 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    NavigationLink { StatsView() } label: { StatsPreview() }
+                }
+
                 soulseekSection
 
                 Section("Accent Colour") {
                     AccentPicker()
                 }
 
-                Section("Playback") {
+                Section {
                     NavigationLink {
                         EqualizerView(equalizer: player.equalizer)
                     } label: {
-                        LabeledContent("Equalizer", value: player.equalizer.isEnabled ? player.equalizer.presetName : "Off")
+                        LabeledContent("Equalizer", value: player.bitPerfect ? "Bypassed"
+                                       : (player.equalizer.isEnabled ? player.equalizer.presetName : "Off"))
                     }
+                    Toggle("Bit-Perfect Mode", isOn: $player.bitPerfect)
+                    if player.bitPerfect {
+                        BitPerfectStatus()
+                    }
+                } header: {
+                    Text("Playback")
+                } footer: {
+                    Text("For USB DACs: switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
                 }
 
                 Section {
@@ -49,13 +65,32 @@ struct SettingsView: View {
                 Section {
                     Toggle("Keep Transfers Running in Background", isOn: $backgroundTransfers)
                     Toggle("Show Transfers in Dynamic Island", isOn: $transferActivity)
+                    Toggle("Seeding Mode", isOn: $seeding)
+                    Button {
+                        router.showWiFiTransfer = true
+                    } label: {
+                        HStack {
+                            Label("Wi-Fi Transfer", systemImage: "wifi")
+                            Spacer()
+                            if server.isRunning {
+                                Text("On").foregroundStyle(.secondary)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 } header: {
                     Text("Transfers")
                 } footer: {
-                    Text("When nothing is playing, colon3 plays silence (mixed under other audio) so iOS doesn't freeze transfers in the background, like iTorrent does. It costs some battery and stops when transfers finish.")
+                    Text("When nothing is playing, colon3 plays silence (mixed under other audio) so iOS doesn't freeze transfers in the background, like iTorrent does. It costs some battery and stops when transfers finish. Seeding Mode keeps it running all the time so people can keep downloading from you, and reconnects if Soulseek drops.")
                 }
 
                 LastFMSection(scrobbling: $scrobbling)
+
+                DiscordSection()
 
                 Section {
                     LabeledContent("Songs", value: "\(library.tracks.count)")
@@ -78,6 +113,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .navigationDestination(isPresented: $router.showWiFiTransfer) { WiFiTransferView() }
             .onAppear { username = soulseek.username }
         }
     }
@@ -113,6 +149,8 @@ struct SettingsView: View {
 struct LastFMSection: View {
     @Binding var scrobbling: Bool
     @EnvironmentObject private var lastfm: LastFM
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var server: WiFiTransferServer
 
     @State private var apiKey = ""
     @State private var apiSecret = ""
@@ -176,6 +214,88 @@ struct LastFMSection: View {
                 self.error = error.localizedDescription
             }
             connecting = false
+        }
+    }
+}
+
+/// Live output details while bit-perfect mode is on.
+struct BitPerfectStatus: View {
+    @EnvironmentObject private var player: Player
+
+    var body: some View {
+        let output = player.output
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent("Output", value: output.routeName.isEmpty ? "–" : output.routeName)
+            LabeledContent("Hardware Rate", value: Formatting.sampleRate(output.hardwareRate))
+            if output.fileRate > 0 {
+                LabeledContent("Song Rate", value: Formatting.sampleRate(output.fileRate))
+            }
+            if player.current != nil {
+                if output.isBitPerfect(enabled: true) {
+                    Label("Bit-perfect", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                } else if let reason = output.blocker(enabled: true) {
+                    Label(reason, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+            }
+        }
+        .font(.subheadline)
+        .onAppear { player.refreshOutputInfo() }
+    }
+}
+
+struct DiscordSection: View {
+    @EnvironmentObject private var discord: DiscordPresence
+    @State private var token = ""
+    @State private var showWarning = false
+
+    var body: some View {
+        Section {
+            if discord.hasToken {
+                Toggle("Show What I'm Listening To", isOn: $discord.enabled)
+                statusRow
+                Picker("Status", selection: $discord.onlineStatus) {
+                    ForEach(DiscordPresence.OnlineStatus.allCases) { Text($0.label).tag($0) }
+                }
+                TextField("Application ID (for cover art)", text: $discord.applicationID)
+                    .keyboardType(.numberPad)
+                    .font(.body.monospacedDigit())
+                Button("Remove Token", role: .destructive) { discord.forgetToken() }
+            } else {
+                SecureField("Discord Token", text: $token)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Connect") { showWarning = true }
+                    .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text("Discord")
+        } footer: {
+            Text(discord.hasToken
+                 ? "Shows “Listening to colon3” with the song and artist while music plays. For cover art, create an application at discord.com/developers (name it colon3) and paste its Application ID."
+                 : "Discord has no official way for iPhone apps to set your status, so this uses your account token (Discord in a browser › Developer Tools › Network › any request › Authorization header). It's stored in the Keychain and only sent to Discord.")
+        }
+        .alert("Use your Discord token?", isPresented: $showWarning) {
+            Button("Cancel", role: .cancel) {}
+            Button("I Understand") {
+                discord.saveToken(token)
+                token = ""
+            }
+        } message: {
+            Text("Using a token from a third-party app breaks Discord's Terms of Service and could get your account flagged. Anyone with the token has full access to your account, so never share it.")
+        }
+    }
+
+    @ViewBuilder
+    private var statusRow: some View {
+        switch discord.status {
+        case .off:
+            Label("Off", systemImage: "circle").foregroundStyle(.secondary)
+        case .connecting:
+            Label("Connecting…", systemImage: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary)
+        case let .connected(name):
+            Label("Connected as \(name)", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
         }
     }
 }

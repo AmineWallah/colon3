@@ -1,18 +1,14 @@
 import SwiftUI
 
 struct ContentView: View {
-    enum AppTab: String, Hashable {
-        case library, search, downloads, settings
-    }
-
     @EnvironmentObject private var soulseek: SoulseekModel
     @EnvironmentObject private var player: Player
-    @AppStorage("selectedTab") private var tab: AppTab = .library
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var library: LibraryStore
     @AppStorage(AccentPalette.storageKey) private var accentHex = AccentPalette.defaultHex
-    @State private var showPlayer = false
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: $router.tab) {
             Tab("Library", systemImage: "music.note.house", value: AppTab.library) {
                 LibraryView().modifier(FallbackMiniPlayer(open: openPlayer))
             }
@@ -28,15 +24,18 @@ struct ContentView: View {
             }
         }
         .modifier(TabAccessoryMiniPlayer(isVisible: player.current != nil, open: openPlayer))
-        .sheet(isPresented: $showPlayer) {
+        .modifier(RouterPresenters(active: !router.showPlayer))
+        .sheet(isPresented: $router.showPlayer) {
             NowPlayingView()
+                .modifier(RouterPresenters(active: true))
                 .tint(Color(hex: accentHex))
         }
+        .onChange(of: library.artworkRevision) { _, _ in player.reloadArtwork() }
         .tint(Color(hex: accentHex))
     }
 
     private func openPlayer() {
-        showPlayer = true
+        router.showPlayer = true
     }
 }
 

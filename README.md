@@ -2,11 +2,14 @@
 
 A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
 
-- **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs and Artists views, favourites, multi-select, and import from Files or other apps.
-- **Artwork:** cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover from the peer too.
-- **Player:** Apple Music-style full screen with synced lyrics (LRCLIB), queue editing, shuffle and repeat, AirPlay, and the Liquid Glass mini player on iOS 26+.
-- **Sound:** 10-band EQ with presets. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
-- **Last.fm** scrobbling with your own API key.
+- **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, and import from Files or other apps.
+- **Playlists:** your own (reorder, rename, .m3u8 import/export), plus Favorite Songs and Most Played.
+- **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
+- **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, AirPlay, and the Liquid Glass mini player on iOS 26+.
+- **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
+- **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
+- **Stats:** listening time, top songs/artists/albums, upload/download totals.
+- **Last.fm** scrobbling with your own API key, and optional Discord "Listening to" status.
 
 Meant for sideloading. It won't pass App Store review.
 
@@ -121,6 +124,22 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
 4. Finished files go to *On My iPhone › colon3 › Music*. They show up in the Files app, and you can drop your own music there too.
 5. **Library:** tap an album, or long-press anything for Play Next, Add to Queue, Favorite and Delete. **Select** enables multi-select.
 6. **Player:** tap the mini player. The speech-bubble button shows lyrics (tap a line to jump there) and the list button the queue. The ••• menu opens the equalizer.
+
+### Links
+
+`colon3://player`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.
+
+### Bit-perfect mode
+
+Settings › Playback. With a wired USB DAC, each song's sample rate is requested from the hardware and the EQ and gain stages are skipped, so the DAC receives the file's samples unchanged. Keep the iPhone volume at maximum and use the DAC's volume. The Now Playing badge says when it's achieved, or why not (Bluetooth, AirPlay, the speaker, or a DAC that refused the rate).
+
+### Wi-Fi Transfer
+
+Settings › Wi-Fi Transfer, then open the address on a computer on the same network and enter the code. Drop files or folders in, download or delete files. Over a cable on Linux: `ifuse --documents com.aminewallah.colon3 ~/iphone`.
+
+### Discord
+
+Settings › Discord. iOS apps have no official way to set Discord presence, so this logs into Discord's gateway with your account token, like Kizzy does on Android. That breaks Discord's Terms of Service and could get the account flagged. For cover art, create an application at discord.com/developers named colon3 and paste its Application ID.
 
 ### Last.fm
 

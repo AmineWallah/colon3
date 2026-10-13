@@ -34,6 +34,12 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
+        # Wi-Fi Transfer serves a page to computers on the same network.
+        NSLocalNetworkUsageDescription: "colon3 uses the local network for Wi-Fi Transfer, so a computer on your Wi-Fi can add or download music."
+        # colon3://player, colon3://downloads, … from the Dynamic Island, Shortcuts and Back Tap.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.aminewallah.colon3
+            CFBundleURLSchemes: [colon3]
         # Lets Files and other apps "Open in" / "Copy to" colon3.
         CFBundleDocumentTypes:
           - CFBundleTypeName: Audio
@@ -51,7 +57,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "0.3.0"
+        MARKETING_VERSION: "0.4.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
@@ -78,7 +84,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3.TransfersWidget
-        MARKETING_VERSION: "0.3.0"
+        MARKETING_VERSION: "0.4.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"

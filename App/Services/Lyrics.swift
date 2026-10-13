@@ -14,7 +14,13 @@ enum Lyrics: Equatable {
     case notFound
 }
 
-/// Lyrics from LRCLIB (lrclib.net): free, no API key, mostly time-synced. Cached on disk.
+/// Where the lyrics on screen came from.
+enum LyricsOrigin {
+    case file, lrclib
+}
+
+/// Lyrics from a .lrc file next to the song if there is one, otherwise LRCLIB (lrclib.net):
+/// free, no API key, mostly time-synced. LRCLIB answers are cached on disk.
 actor LyricsService {
     static let shared = LyricsService()
 
@@ -36,6 +42,20 @@ actor LyricsService {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()
+
+    /// A sidecar .lrc (or plain text saved as .lrc) next to the song.
+    nonisolated static func localLyrics(at url: URL) -> Lyrics? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let text = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+        let synced = parseLRC(text)
+        if !synced.isEmpty { return .synced(synced) }
+        // No timestamps: show it as plain text, minus LRC tags like [ar:…].
+        let lines = text.components(separatedBy: .newlines)
+            .filter { !($0.hasPrefix("[") && $0.hasSuffix("]")) }
+        let trimmed = lines.drop(while: { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        return trimmed.isEmpty ? nil : .plain(Array(trimmed))
+    }
 
     /// nil means the lookup failed (offline, server error), so the caller can offer a retry.
     func lyrics(title: String, artist: String, album: String?, duration: Double, cacheKey: String) async -> Lyrics? {

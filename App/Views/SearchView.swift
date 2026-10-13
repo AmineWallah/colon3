@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var soulseek: SoulseekModel
+    @EnvironmentObject private var router: AppRouter
     @State private var query = ""
     @State private var showFilters = false
 
@@ -44,6 +45,13 @@ struct SearchView: View {
             .navigationTitle("Search")
             .searchable(text: $query, prompt: "Artist, album or track")
             .onSubmit(of: .search) { soulseek.search(query) }
+            .onReceive(router.$pendingSearch) { pending in
+                // colon3://search?q=… from Shortcuts.
+                guard let pending else { return }
+                query = pending
+                soulseek.search(pending)
+                router.pendingSearch = nil
+            }
             .navigationDestination(for: String.self) { id in
                 FolderDetailView(folderID: id)
             }

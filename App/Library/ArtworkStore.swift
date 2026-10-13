@@ -4,6 +4,7 @@ import SoulseekKit
 import UIKit
 
 /// Finds and caches cover art. Order for library items:
+/// 0. a cover the user picked in the app (kept in Application Support, files untouched)
 /// 1. an image file next to the music (cover.jpg, folder.jpg, …)
 /// 2. art embedded in the audio file (extracted once into the cache folder)
 /// 3. an iTunes Search lookup, if enabled in Settings
@@ -82,9 +83,44 @@ actor ArtworkStore {
         memory.removeAllObjects()
     }
 
+    // MARK: Custom covers
+
+    nonisolated static let overridesDirectory: URL = {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ArtworkOverrides", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
+    nonisolated static func overrideURL(for source: ArtworkSource) -> URL {
+        overridesDirectory.appendingPathComponent(MD5.hex(source.key) + ".img")
+    }
+
+    nonisolated static func hasOverride(for source: ArtworkSource) -> Bool {
+        FileManager.default.fileExists(atPath: overrideURL(for: source).path)
+    }
+
+    /// Saves picked image data as this album's or song's cover. Rejects anything ImageIO can't read.
+    func setOverride(_ data: Data, for source: ArtworkSource) -> Bool {
+        guard let image = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(image) > 0 else { return false }
+        guard (try? data.write(to: Self.overrideURL(for: source), options: .atomic)) != nil else { return false }
+        invalidate(source)
+        return true
+    }
+
+    func removeOverride(for source: ArtworkSource) {
+        try? FileManager.default.removeItem(at: Self.overrideURL(for: source))
+        invalidate(source)
+    }
+
     // MARK: Resolution
 
     private func resolve(_ source: ArtworkSource) async -> URL? {
+        if case .remote = source {} else {
+            let custom = Self.overrideURL(for: source)
+            if FileManager.default.fileExists(atPath: custom.path) { return custom }
+        }
         switch source {
         case let .album(album):
             if let local = folderImage(in: album.folder) { return local }
@@ -232,6 +268,27 @@ actor CoverLookup {
         } catch {
             return .failed
         }
+    }
+
+    /// A public 512px cover URL (for Discord), without downloading the image.
+    func artworkURL(query: String, entity: String) async -> String? {
+        let wait = spacing - Date().timeIntervalSince(lastRequest)
+        lastRequest = Date().addingTimeInterval(max(wait, 0))
+        if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+
+        var components = URLComponents(string: "https://itunes.apple.com/search")!
+        components.queryItems = [
+            URLQueryItem(name: "term", value: query),
+            URLQueryItem(name: "entity", value: entity),
+            URLQueryItem(name: "media", value: "music"),
+            URLQueryItem(name: "limit", value: "3"),
+        ]
+        guard let url = components.url,
+              let result = try? await URLSession.shared.data(from: url),
+              (result.1 as? HTTPURLResponse)?.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(SearchResponse.self, from: result.0),
+              let small = decoded.results.first(where: { $0.artworkUrl100 != nil })?.artworkUrl100 else { return nil }
+        return small.replacingOccurrences(of: "100x100bb", with: "512x512bb")
     }
 
     private struct SearchResponse: Decodable {

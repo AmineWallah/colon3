@@ -3,7 +3,17 @@ import SwiftUI
 
 struct DownloadsView: View {
     @EnvironmentObject private var soulseek: SoulseekModel
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var player: Player
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var playlists: PlaylistStore
+    @EnvironmentObject private var router: AppRouter
     @State private var collapsed = Set<String>()
+    @State private var editMode: EditMode = .inactive
+    @State private var selection = Set<DownloadID>()
+    @State private var confirmDeleteFiles = false
+
+    private var isSelecting: Bool { editMode.isEditing }
 
     private struct UserGroup: Identifiable {
         let username: String
@@ -35,9 +45,13 @@ struct DownloadsView: View {
         return groups.sorted { ($0.active > 0 ? 0 : 1) < ($1.active > 0 ? 0 : 1) }
     }
 
+    private var selectedItems: [DownloadItem] {
+        soulseek.visibleDownloads.filter { selection.contains($0.id) }
+    }
+
     var body: some View {
         NavigationStack {
-            List {
+            List(selection: $selection) {
                 if !soulseek.isLoggedIn {
                     Section { ConnectionBanner() }
                 }
@@ -71,7 +85,9 @@ struct DownloadsView: View {
                 if !soulseek.uploads.isEmpty {
                     Section {
                         if !collapsed.contains(uploadsKey) {
-                            ForEach(soulseek.uploads) { item in UploadRow(item: item) }
+                            ForEach(soulseek.uploads) { item in
+                                UploadRow(item: item).selectionDisabled()
+                            }
                         }
                     } header: {
                         collapsibleHeader(key: uploadsKey) {
@@ -83,19 +99,22 @@ struct DownloadsView: View {
                     }
                 }
             }
-            .navigationTitle("Downloads")
+            .environment(\.editMode, $editMode)
+            .navigationTitle(isSelecting ? (selection.isEmpty ? "Select Items" : "\(selection.count) Selected") : "Downloads")
+            .navigationBarTitleDisplayMode(isSelecting ? .inline : .large)
             .animation(.default, value: collapsed)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(collapsed.isEmpty ? "Collapse All" : "Expand All") {
-                        collapsed = collapsed.isEmpty ? Set(groups.map(\.username) + [uploadsKey]) : []
-                    }
-                    .disabled(groups.isEmpty && soulseek.uploads.isEmpty)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear Finished") { soulseek.clearFinished() }
-                        .disabled(soulseek.downloads.allSatisfy(\.isActive) && soulseek.uploads.allSatisfy(\.isActive))
-                }
+            .toolbar { toolbar }
+            .safeAreaInset(edge: .bottom) {
+                if isSelecting { selectionBar }
+            }
+            .onChange(of: soulseek.downloads.map(\.id)) { _, ids in
+                // Drop selections whose rows went away.
+                selection.formIntersection(ids)
+            }
+            .confirmationDialog(deleteTitle, isPresented: $confirmDeleteFiles, titleVisibility: .visible) {
+                Button("Delete Files", role: .destructive) { deleteSelectedFiles() }
+            } message: {
+                Text("Finished songs are removed from this iPhone. Unfinished downloads are cancelled.")
             }
             .overlay {
                 if soulseek.visibleDownloads.isEmpty && soulseek.uploads.isEmpty {
@@ -105,6 +124,114 @@ struct DownloadsView: View {
                 }
             }
         }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if isSelecting {
+                let all = Set(soulseek.visibleDownloads.map(\.id))
+                Button(selection == all && !all.isEmpty ? "Deselect All" : "Select All") {
+                    if selection == all {
+                        selection.removeAll()
+                    } else {
+                        selection = all
+                        collapsed.removeAll()
+                    }
+                }
+            } else {
+                Button(collapsed.isEmpty ? "Collapse All" : "Expand All") {
+                    collapsed = collapsed.isEmpty ? Set(groups.map(\.username) + [uploadsKey]) : []
+                }
+                .disabled(groups.isEmpty && soulseek.uploads.isEmpty)
+            }
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if !isSelecting {
+                Menu {
+                    Button { soulseek.retryAllFailed() } label: { Label("Retry All Failed", systemImage: "arrow.clockwise") }
+                    Button { soulseek.clearCompleted() } label: { Label("Clear Completed", systemImage: "checkmark.circle") }
+                    Button { soulseek.clearFailed() } label: { Label("Clear Failed", systemImage: "exclamationmark.circle") }
+                    Button { soulseek.clearFinished() } label: { Label("Clear All Finished", systemImage: "trash.slash") }
+                    Divider()
+                    Button(role: .destructive) { soulseek.cancelAllActive() } label: {
+                        Label("Cancel All Downloads", systemImage: "xmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .disabled(soulseek.visibleDownloads.isEmpty && soulseek.uploads.isEmpty)
+            }
+            Button(isSelecting ? "Done" : "Select") {
+                withAnimation {
+                    editMode = isSelecting ? .inactive : .active
+                    selection.removeAll()
+                }
+            }
+            .disabled(!isSelecting && soulseek.visibleDownloads.isEmpty)
+        }
+    }
+
+    private var selectionBar: some View {
+        let items = selectedItems
+        let failed = items.filter { if case .failed = $0.state { return true } else { return false } }.count
+        let finishedSongs = soulseek.libraryTracks(for: selection)
+        return HStack {
+            Button {
+                soulseek.retry(selection)
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+            }
+            .disabled(failed == 0)
+            Spacer()
+            Menu {
+                Button { player.playNext(finishedSongs) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                Button { player.addToQueue(finishedSongs) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
+                Button { router.addToPlaylist(finishedSongs) } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
+            } label: {
+                Label("Songs", systemImage: "music.note.list")
+            }
+            .disabled(finishedSongs.isEmpty)
+            Spacer()
+            Button {
+                soulseek.remove(selection)
+                selection.removeAll()
+            } label: {
+                Label(items.contains(where: \.isActive) ? "Cancel" : "Clear", systemImage: "xmark.circle")
+            }
+            .disabled(items.isEmpty)
+            Spacer()
+            Button(role: .destructive) {
+                confirmDeleteFiles = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .disabled(items.isEmpty)
+        }
+        .labelStyle(.titleAndIcon)
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
+    }
+
+    private var deleteTitle: String {
+        let count = soulseek.libraryTracks(for: selection).count
+        return count == 0 ? "Remove \(selection.count) item\(selection.count == 1 ? "" : "s")?"
+            : "Delete \(count) downloaded song\(count == 1 ? "" : "s")?"
+    }
+
+    private func deleteSelectedFiles() {
+        let tracks = soulseek.libraryTracks(for: selection)
+        if !tracks.isEmpty {
+            player.remove(tracks)
+            favorites.forget(tracks)
+            playlists.forget(tracks)
+            library.delete(tracks)
+        }
+        soulseek.remove(selection)
+        selection.removeAll()
+        withAnimation { editMode = .inactive }
     }
 
     private let uploadsKey = "\u{0}uploads"
@@ -125,6 +252,13 @@ struct DownloadsView: View {
             }
         }
         .contextMenu {
+            Button {
+                withAnimation { editMode = .active }
+                selection.formUnion(group.items.map(\.id))
+                collapsed.remove(group.username)
+            } label: {
+                Label("Select All from \(group.username)", systemImage: "checkmark.circle")
+            }
             if group.failed > 0 {
                 Button { soulseek.retryFailed(from: group.username) } label: {
                     Label("Retry Failed", systemImage: "arrow.clockwise")
@@ -198,19 +332,10 @@ struct DownloadRow: View {
 
     /// Finished files show their real cover; others a best guess from the folder name.
     private var artwork: ArtworkSource {
-        if case let .completed(url) = item.state, let track = libraryTrack(at: url) {
+        if case let .completed(url) = item.state, let track = library.track(at: url) {
             return library.artwork(for: track)
         }
         return .remote(CoverLookup.query(forFolderPath: item.folderPath))
-    }
-
-    private func libraryTrack(at url: URL) -> Track? {
-        let root = library.root.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        guard path.hasPrefix(root) else { return nil }
-        var relative = String(path.dropFirst(root.count))
-        if relative.hasPrefix("/") { relative.removeFirst() }
-        return library.track(id: relative)
     }
 
     var body: some View {

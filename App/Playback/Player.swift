@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import MediaPlayer
 import SwiftUI
 import UIKit
@@ -32,6 +33,18 @@ final class Player: ObservableObject {
     @Published private(set) var isSpatialPlayback = false
     @Published private(set) var shuffle = false
     @Published var repeatMode: RepeatMode = .off
+    /// Bit-perfect mode for USB DACs (see EngineBackend). Saved in Settings.
+    @Published var bitPerfect: Bool {
+        didSet {
+            UserDefaults.standard.set(bitPerfect, forKey: AppSettings.bitPerfectKey)
+            engine.bitPerfect = bitPerfect
+            applyEqualizer()
+            refreshOutputInfo()
+        }
+    }
+    @Published private(set) var output = OutputInfo()
+    /// Fires whenever what's playing, play/pause or the position jumps (Discord, widgets).
+    let stateChanged = PassthroughSubject<Void, Never>()
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var upNext: ArraySlice<Track> { queue.indices.contains(index) ? queue[(index + 1)...] : [] }
@@ -39,6 +52,7 @@ final class Player: ObservableObject {
     let equalizer: Equalizer
     weak var library: LibraryStore?
     weak var scrobbler: Scrobbler?
+    weak var stats: StatsStore?
 
     private let engine: EngineBackend
     private let avPlayer: AVPlayerBackend
@@ -51,21 +65,22 @@ final class Player: ObservableObject {
     private var listened: Double = 0
     private var startedAt = Date()
     private var scrobbled = false
+    private var countedPlay = false
 
     init(equalizer: Equalizer) {
         self.equalizer = equalizer
         clock = PlaybackClock()
         engine = EngineBackend()
         avPlayer = AVPlayerBackend()
+        bitPerfect = UserDefaults.standard.bool(forKey: AppSettings.bitPerfectKey)
+        engine.bitPerfect = bitPerfect
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try? session.setSupportsMultichannelContent(true)
 
-        equalizer.onChange = { [weak self] in
-            guard let self else { return }
-            self.equalizer.configure(self.engine.eq)
-        }
-        equalizer.configure(engine.eq)
+        equalizer.onChange = { [weak self] in self?.applyEqualizer() }
+        applyEqualizer()
+        engine.onOutputChange = { [weak self] in self?.refreshOutputInfo() }
 
         for backend in [engine, avPlayer] as [PlaybackBackend] {
             backend.onFinish = { [weak self] in self?.trackFinished() }
@@ -84,6 +99,7 @@ final class Player: ObservableObject {
             MainActor.assumeIsolated {
                 // Headphones unplugged: pause, like every music app.
                 if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }
+                self?.refreshOutputInfo()
             }
         })
     }
@@ -199,6 +215,7 @@ final class Player: ObservableObject {
         isPlaying = backend.isPlaying || backend === avPlayer
         startTimer()
         updateNowPlaying()
+        refreshOutputInfo()
     }
 
     func pause() {
@@ -276,7 +293,9 @@ final class Player: ObservableObject {
         listened = 0
         startedAt = Date()
         scrobbled = false
+        countedPlay = false
         artwork = nil
+        refreshOutputInfo()
 
         if autoplay {
             resume()
@@ -286,15 +305,40 @@ final class Player: ObservableObject {
         }
         scrobbler?.nowPlaying(track)
 
-        let id = track.id
-        if let source = artworkSource {
-            Task {
-                let image = await ArtworkStore.shared.image(for: source, maxPixel: 1200)
-                guard self.current?.id == id else { return }
-                self.artwork = image
-                self.updateNowPlaying()
-            }
+        reloadArtwork()
+    }
+
+    /// Reloads the current cover (after a new one was downloaded or picked).
+    func reloadArtwork() {
+        guard let id = current?.id, let source = artworkSource else { return }
+        Task {
+            let image = await ArtworkStore.shared.image(for: source, maxPixel: 1200)
+            guard self.current?.id == id, image !== self.artwork else { return }
+            self.artwork = image
+            self.updateNowPlaying()
         }
+    }
+
+    private func applyEqualizer() {
+        if bitPerfect {
+            engine.eq.bypass = true
+            engine.eq.globalGain = 0
+        } else {
+            equalizer.configure(engine.eq)
+        }
+    }
+
+    /// What the hardware is doing right now, for the Now Playing badge and Settings.
+    func refreshOutputInfo() {
+        let session = AVAudioSession.sharedInstance()
+        let port = session.currentRoute.outputs.first
+        let fileRate = backend === engine ? engine.fileSampleRate : 0
+        let info = OutputInfo(routeName: port?.portName ?? "",
+                              routeKind: OutputInfo.Kind(port?.portType),
+                              hardwareRate: session.sampleRate,
+                              fileRate: fileRate,
+                              usingEngine: backend === engine)
+        if info != output { output = info }
     }
 
     private func trackFinished() {
@@ -320,6 +364,15 @@ final class Player: ObservableObject {
             clock.position = backend.currentTime
             listened += 0.2
             maybeScrobble(force: false)
+            if let track = current {
+                let album = library?.album(containing: track)?.title ?? track.album
+                stats?.addListening(track, album: album, seconds: 0.2)
+                // A play counts after 30 s, or half of a shorter song.
+                if !countedPlay, listened >= min(30, max(duration, 1) * 0.5) {
+                    countedPlay = true
+                    stats?.recordPlay(track, album: album)
+                }
+            }
             if duration <= 0, backend.duration > 0 { duration = backend.duration }
         } else if timer != nil {
             timer?.invalidate()
@@ -403,5 +456,60 @@ final class Player: ObservableObject {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        stateChanged.send()
+    }
+}
+
+/// The current audio output, and whether playback reaches it untouched.
+struct OutputInfo: Equatable {
+    enum Kind: Equatable {
+        case wired, bluetooth, airPlay, builtIn, other
+
+        init(_ port: AVAudioSession.Port?) {
+            guard let port else {
+                self = .other
+                return
+            }
+            if [.usbAudio, .headphones, .lineOut, .HDMI].contains(port) {
+                self = .wired
+            } else if [.bluetoothA2DP, .bluetoothLE, .bluetoothHFP].contains(port) {
+                self = .bluetooth
+            } else if port == .airPlay {
+                self = .airPlay
+            } else if port == .builtInSpeaker || port == .builtInReceiver {
+                self = .builtIn
+            } else {
+                self = .other
+            }
+        }
+    }
+
+    var routeName = ""
+    var routeKind = Kind.other
+    var hardwareRate: Double = 0
+    var fileRate: Double = 0
+    var usingEngine = false
+
+    var ratesMatch: Bool { fileRate > 0 && abs(fileRate - hardwareRate) < 1 }
+
+    /// Bit-perfect is only possible over a wired digital output with matching rates.
+    func isBitPerfect(enabled: Bool) -> Bool {
+        enabled && usingEngine && routeKind == .wired && ratesMatch
+    }
+
+    /// Why it isn't, in a few words.
+    func blocker(enabled: Bool) -> String? {
+        guard enabled else { return nil }
+        if !usingEngine { return "Spatial audio file" }
+        switch routeKind {
+        case .bluetooth: return "Bluetooth re-encodes audio"
+        case .airPlay: return "AirPlay resamples audio"
+        case .builtIn: return "Built-in speaker"
+        case .other, .wired: break
+        }
+        if fileRate > 0, !ratesMatch {
+            return "Resampled \(Formatting.sampleRate(fileRate)) → \(Formatting.sampleRate(hardwareRate))"
+        }
+        return nil
     }
 }

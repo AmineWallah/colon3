@@ -8,6 +8,7 @@ struct LyricsView: View {
     let position: Double
     let onSeek: (Double) -> Void
 
+    @EnvironmentObject private var router: AppRouter
     @State private var lyrics: Lyrics?
     @State private var isLoading = true
     @State private var userScrolledAt: Date?
@@ -25,7 +26,13 @@ struct LyricsView: View {
                 case .instrumental:
                     message("Instrumental", systemImage: "music.note")
                 case .notFound:
-                    message("No lyrics found on LRCLIB", systemImage: "quote.bubble")
+                    VStack(spacing: 12) {
+                        message("No lyrics found on LRCLIB", systemImage: "quote.bubble")
+                            .frame(maxHeight: 120)
+                        Button("Import .lrc File…") { router.importLyrics(for: track) }
+                            .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case nil:
                     VStack(spacing: 12) {
                         message("Couldn't load lyrics", systemImage: "wifi.exclamationmark")
@@ -36,13 +43,18 @@ struct LyricsView: View {
                 }
             }
         }
-        .task(id: track.id) { await load() }
+        .task(id: "\(track.id)#\(router.lyricsRevision)") { await load() }
     }
 
     private func load() async {
         isLoading = true
-        lyrics = await LyricsService.shared.lyrics(title: track.title, artist: track.artist, album: albumTitle,
-                                                   duration: track.duration, cacheKey: track.id)
+        let file = LibraryStore.lyricsURL(for: track)
+        if let local = await Task.detached(priority: .userInitiated, operation: { LyricsService.localLyrics(at: file) }).value {
+            lyrics = local
+        } else {
+            lyrics = await LyricsService.shared.lyrics(title: track.title, artist: track.artist, album: albumTitle,
+                                                       duration: track.duration, cacheKey: track.id)
+        }
         isLoading = false
     }
 

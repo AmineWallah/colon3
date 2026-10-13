@@ -31,6 +31,8 @@ final class LibraryStore: ObservableObject {
 
     nonisolated static let audioExtensions: Set<String> = ["mp3", "m4a", "m4b", "mp4", "aac", "alac", "flac", "wav", "aif", "aiff", "caf"]
     nonisolated static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "webp", "heic"]
+    /// Files that travel with the music but aren't songs: covers and synced lyrics.
+    nonisolated static let sidecarExtensions: Set<String> = imageExtensions.union(["lrc"])
 
     init() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -52,9 +54,68 @@ final class LibraryStore: ObservableObject {
 
     func artist(named name: String) -> ArtistEntry? { artists.first { $0.name == name } }
 
-    /// Best artwork for a track: its album's when it has one, so covers stay consistent.
+    /// The library song stored at a file URL (e.g. a finished download), if any.
+    func track(at url: URL) -> Track? {
+        let rootPath = root.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(rootPath) else { return nil }
+        var relative = String(path.dropFirst(rootPath.count))
+        if relative.hasPrefix("/") { relative.removeFirst() }
+        return tracksByID[relative]
+    }
+
+    /// Best artwork for a track: its own custom cover if one was set, else its album's when it
+    /// has one, so covers stay consistent.
     func artwork(for track: Track) -> ArtworkSource {
-        albumByTrack[track.id].map { .album($0) } ?? .track(track)
+        if customTrackArt.contains(track.id) { return .track(track) }
+        return albumByTrack[track.id].map { .album($0) } ?? .track(track)
+    }
+
+    // MARK: Custom artwork
+
+    /// Songs with their own picked cover (albums don't need tracking: their override is found by key).
+    @Published private(set) var customTrackArt: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "customTrackArt") ?? [])
+
+    func setCustomArtwork(_ data: Data, for target: ArtworkTarget) async -> Bool {
+        guard await ArtworkStore.shared.setOverride(data, for: target.source) else { return false }
+        if case let .track(track) = target {
+            customTrackArt.insert(track.id)
+            UserDefaults.standard.set(Array(customTrackArt), forKey: "customTrackArt")
+        }
+        artworkRevision += 1
+        return true
+    }
+
+    func removeCustomArtwork(for target: ArtworkTarget) async {
+        await ArtworkStore.shared.removeOverride(for: target.source)
+        if case let .track(track) = target {
+            customTrackArt.remove(track.id)
+            UserDefaults.standard.set(Array(customTrackArt), forKey: "customTrackArt")
+        }
+        artworkRevision += 1
+    }
+
+    func hasCustomArtwork(_ target: ArtworkTarget) -> Bool {
+        ArtworkStore.hasOverride(for: target.source)
+    }
+
+    // MARK: Lyrics files
+
+    /// "Song.flac" → "Song.lrc" in the same folder.
+    nonisolated static func lyricsURL(for track: Track) -> URL {
+        track.url.deletingPathExtension().appendingPathExtension("lrc")
+    }
+
+    /// Copies a picked .lrc/.txt next to the song so it's used instead of LRCLIB.
+    func importLyrics(from source: URL, for track: Track) -> Bool {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: source), !data.isEmpty, data.count < 2_000_000 else { return false }
+        return (try? data.write(to: Self.lyricsURL(for: track), options: .atomic)) != nil
+    }
+
+    func removeLyricsFile(for track: Track) {
+        try? FileManager.default.removeItem(at: Self.lyricsURL(for: track))
     }
 
     // MARK: Scanning
@@ -264,6 +325,7 @@ final class LibraryStore: ObservableObject {
         var folders = Set<URL>()
         for track in doomed {
             try? fileManager.removeItem(at: track.url)
+            try? fileManager.removeItem(at: Self.lyricsURL(for: track))
             folders.insert(track.folder)
         }
         // Drop folders that no longer hold any audio (leftover covers included).
@@ -309,7 +371,7 @@ final class LibraryStore: ObservableObject {
             for case let file as URL in enumerator {
                 let ext = file.pathExtension.lowercased()
                 let isAudio = audioExtensions.contains(ext)
-                guard isAudio || imageExtensions.contains(ext) else { continue }
+                guard isAudio || sidecarExtensions.contains(ext) else { continue }
                 let filePath = file.resolvingSymlinksInPath().path
                 guard filePath.hasPrefix(sourcePath) else { continue }
                 let relative = String(filePath.dropFirst(sourcePath.count))
@@ -320,7 +382,19 @@ final class LibraryStore: ObservableObject {
             return count
         }
 
-        guard audioExtensions.contains(url.pathExtension.lowercased()) else { return 0 }
+        let ext = url.pathExtension.lowercased()
+        if ext == "lrc" {
+            // A loose .lrc goes next to the song with the same name, wherever it is.
+            let base = url.deletingPathExtension().lastPathComponent.lowercased()
+            guard let match = audioFiles(in: root).first(where: {
+                $0.url.deletingPathExtension().lastPathComponent.lowercased() == base
+            }) else { return 0 }
+            let destination = match.url.deletingPathExtension().appendingPathExtension("lrc")
+            try? fileManager.removeItem(at: destination)
+            _ = try? fileManager.copyItem(at: url, to: destination)
+            return 0
+        }
+        guard audioExtensions.contains(ext) else { return 0 }
         let folder = root.appendingPathComponent("Imported", isDirectory: true)
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         let destination = uniqueURL(folder.appendingPathComponent(url.lastPathComponent))
@@ -343,7 +417,7 @@ final class LibraryStore: ObservableObject {
     }
 
     static let importableTypes: [UTType] = [.audio, .mp3, .mpeg4Audio, .wav, .aiff, .folder]
-        + [UTType(filenameExtension: "flac")].compactMap { $0 }
+        + [UTType(filenameExtension: "flac"), UTType(filenameExtension: "lrc")].compactMap { $0 }
 }
 
 struct CachedEntry: Codable, Sendable {

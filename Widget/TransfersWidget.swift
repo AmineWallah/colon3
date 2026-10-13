@@ -14,6 +14,7 @@ struct TransfersLiveActivity: Widget {
         ActivityConfiguration(for: TransferActivityAttributes.self) { context in
             LockScreenTransfers(state: context.state, accent: accent(context.attributes))
                 .padding(16)
+                .widgetURL(URL(string: "colon3://downloads"))
                 .activityBackgroundTint(Color.black.opacity(0.55))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
@@ -28,7 +29,8 @@ struct TransfersLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        Text(state.percentText).font(.title3.weight(.semibold).monospacedDigit())
+                        Text(state.isIdleSeeding ? state.compactText : state.percentText)
+                            .font(.title3.weight(.semibold).monospacedDigit())
                         if !state.speedText.isEmpty {
                             Text(state.speedText).font(.caption2).foregroundStyle(.secondary)
                         }
@@ -43,21 +45,30 @@ struct TransfersLiveActivity: Widget {
                         if !state.currentFile.isEmpty {
                             Text(state.currentFile).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
-                        ProgressView(value: state.fraction).tint(tint)
+                        if state.isIdleSeeding {
+                            Text("Sharing your library on Soulseek").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            ProgressView(value: state.fraction).tint(tint)
+                        }
                     }
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
                 Image(systemName: state.symbol).foregroundStyle(tint)
             } compactTrailing: {
-                Text(state.percentText)
+                Text(state.compactText)
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(tint)
             } minimal: {
-                ProgressView(value: state.fraction)
-                    .progressViewStyle(.circular)
-                    .tint(tint)
+                if state.isIdleSeeding {
+                    Image(systemName: state.symbol).foregroundStyle(tint)
+                } else {
+                    ProgressView(value: state.fraction)
+                        .progressViewStyle(.circular)
+                        .tint(tint)
+                }
             }
+            .widgetURL(URL(string: "colon3://downloads"))
             .keylineTint(tint)
         }
     }
@@ -85,12 +96,14 @@ struct LockScreenTransfers: View {
                 HStack {
                     Text("colon3 · " + state.title).font(.headline).lineLimit(1)
                     Spacer()
-                    Text(state.percentText).font(.headline.monospacedDigit())
+                    Text(state.compactText).font(.headline.monospacedDigit())
                 }
                 if !state.currentFile.isEmpty {
                     Text(state.currentFile).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                ProgressView(value: state.fraction).tint(accent)
+                if !state.isIdleSeeding {
+                    ProgressView(value: state.fraction).tint(accent)
+                }
                 if !state.speedText.isEmpty {
                     Text(state.speedText).font(.caption2).foregroundStyle(.secondary)
                 }

@@ -6,35 +6,59 @@ import SoulseekKit
 /// Watches Soulseek transfers and playback. While transfers run and nothing is playing it shows a
 /// Live Activity (Dynamic Island / Lock Screen) and keeps the app awake in the background.
 /// When music plays, the system's Now Playing takes the Island instead.
+///
+/// Seeding Mode does the same with no transfers at all: the app stays online in the background
+/// so peers can keep downloading from you, and reconnects if the server drops it.
 @MainActor
 final class TransferMonitor {
     private let soulseek: SoulseekModel
     private let player: Player
+    private weak var stats: StatsStore?
     private let keeper = BackgroundKeeper()
     private var activity: Activity<TransferActivityAttributes>?
-    private var subscription: AnyCancellable?
+    private var subscriptions = Set<AnyCancellable>()
+    private var heartbeat: Timer?
+    private var lastReconnect = Date.distantPast
 
     private var lastBytes: UInt64 = 0
     private var lastSample = Date()
     private var speed: Double = 0
 
-    init(soulseek: SoulseekModel, player: Player) {
+    init(soulseek: SoulseekModel, player: Player, stats: StatsStore) {
         self.soulseek = soulseek
         self.player = player
+        self.stats = stats
 
         // Activities left over from a previous run (crash, force quit) would otherwise linger.
         for stale in Activity<TransferActivityAttributes>.activities {
             Task { await stale.end(nil, dismissalPolicy: .immediate) }
         }
 
-        subscription = soulseek.$downloads
+        soulseek.$downloads
             .combineLatest(soulseek.$uploads, player.$isPlaying)
             .throttle(for: .seconds(1.5), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] downloads, uploads, isPlaying in
-                MainActor.assumeIsolated {
-                    self?.update(downloads: downloads, uploads: uploads, isPlaying: isPlaying)
-                }
+            .sink { [weak self] _, _, _ in
+                MainActor.assumeIsolated { self?.refresh() }
             }
+            .store(in: &subscriptions)
+
+        // Settings toggles (seeding, activity, background) take effect right away.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            }
+            .store(in: &subscriptions)
+
+        heartbeat = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    var isSeeding: Bool { AppSettings.seedingEnabled }
+
+    func refresh() {
+        update(downloads: soulseek.downloads, uploads: soulseek.uploads, isPlaying: player.isPlaying)
     }
 
     private func update(downloads: [DownloadItem], uploads: [UploadItem], isPlaying: Bool) {
@@ -42,6 +66,13 @@ final class TransferMonitor {
         let moving = activeDownloads.filter { $0.state == .transferring || $0.state == .starting }
         let sending = uploads.filter { $0.state == .transferring }
         let busy = !activeDownloads.isEmpty || !sending.isEmpty
+        let seeding = isSeeding && soulseek.hasCredentials
+
+        // Seeding: stay logged in even if the server or network dropped us.
+        if seeding, !soulseek.isLoggedIn, Date().timeIntervalSince(lastReconnect) > 60 {
+            lastReconnect = Date()
+            soulseek.reconnectIfNeeded()
+        }
 
         // Combined speed across everything that's moving.
         let bytes = downloads.reduce(UInt64(0)) { $0 + $1.received } + uploads.reduce(UInt64(0)) { $0 + $1.sent }
@@ -55,17 +86,18 @@ final class TransferMonitor {
         }
 
         // Keep-alive only matters when music isn't already keeping the app running.
-        if busy, !isPlaying, flag(AppSettings.backgroundTransfersKey) {
+        let wantsKeeper = (busy && AppSettings.flag(AppSettings.backgroundTransfersKey)) || seeding
+        if wantsKeeper, !isPlaying {
             keeper.start()
         } else {
             keeper.stop()
         }
 
-        guard flag(AppSettings.transferActivityKey) else {
+        guard AppSettings.flag(AppSettings.transferActivityKey) else {
             endActivity(finished: false)
             return
         }
-        if busy, !isPlaying {
+        if (busy || seeding), !isPlaying {
             let tracked = activeDownloads.map { ($0.received, $0.size) } + sending.map { ($0.sent, $0.size) }
             let total = tracked.reduce(UInt64(0)) { $0 + $1.1 }
             let done = tracked.reduce(UInt64(0)) { $0 + $1.0 }
@@ -76,10 +108,12 @@ final class TransferMonitor {
                 fraction: total > 0 ? min(1, Double(done) / Double(total)) : 0,
                 bytesPerSecond: moving.isEmpty && sending.isEmpty ? 0 : speed,
                 currentFile: moving.first?.filename ?? sending.first?.filename ?? "",
-                finished: false)
+                finished: false,
+                seeding: seeding ? soulseek.library.tracks.count : 0,
+                sessionUploaded: Double(stats?.sessionUploadedBytes ?? 0))
             showActivity(state)
         } else {
-            endActivity(finished: !busy)
+            endActivity(finished: !busy && !seeding)
         }
     }
 
@@ -104,9 +138,5 @@ final class TransferMonitor {
             await activity.end(ActivityContent(state: final, staleDate: nil),
                                dismissalPolicy: finished ? .after(Date().addingTimeInterval(5)) : .immediate)
         }
-    }
-
-    private func flag(_ key: String) -> Bool {
-        UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
 }

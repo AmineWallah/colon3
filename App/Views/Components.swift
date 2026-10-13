@@ -176,6 +176,7 @@ struct TrackMenuItems: View {
 
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         Button {
@@ -187,6 +188,21 @@ struct TrackMenuItems: View {
             player.addToQueue(tracks)
         } label: {
             Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+        }
+        Button {
+            router.addToPlaylist(tracks)
+        } label: {
+            Label("Add to Playlist…", systemImage: "text.badge.plus")
+        }
+        if let album {
+            ArtworkMenu(target: .album(album))
+        } else if tracks.count == 1, let track = tracks.first {
+            ArtworkMenu(target: .track(track))
+            Button {
+                router.importLyrics(for: track)
+            } label: {
+                Label("Import Lyrics (.lrc)…", systemImage: "quote.bubble")
+            }
         }
         if let album {
             Button {
@@ -219,6 +235,38 @@ struct TrackMenuItems: View {
     }
 }
 
+/// "Change Artwork" submenu: from Photos, from Files, or back to the original.
+struct ArtworkMenu: View {
+    let target: ArtworkTarget
+
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var library: LibraryStore
+
+    var body: some View {
+        Menu {
+            Button {
+                router.pickArtworkPhoto(for: target)
+            } label: {
+                Label("Choose from Photos…", systemImage: "photo.on.rectangle")
+            }
+            Button {
+                router.importArtworkFile(for: target)
+            } label: {
+                Label("Choose from Files…", systemImage: "folder")
+            }
+            if library.hasCustomArtwork(target) {
+                Button(role: .destructive) {
+                    Task { await library.removeCustomArtwork(for: target) }
+                } label: {
+                    Label("Use Original Artwork", systemImage: "arrow.uturn.backward")
+                }
+            }
+        } label: {
+            Label("Change Artwork", systemImage: "photo")
+        }
+    }
+}
+
 /// Asks before deleting files from the phone, then cleans up the queue and favourites.
 struct DeleteConfirmation: ViewModifier {
     @Binding var pending: [Track]?
@@ -227,6 +275,7 @@ struct DeleteConfirmation: ViewModifier {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var playlists: PlaylistStore
 
     func body(content: Content) -> some View {
         content.confirmationDialog(
@@ -238,6 +287,7 @@ struct DeleteConfirmation: ViewModifier {
                 guard let tracks = pending else { return }
                 player.remove(tracks)
                 favorites.forget(tracks)
+                playlists.forget(tracks)
                 library.delete(tracks)
                 pending = nil
                 onDeleted?(tracks)

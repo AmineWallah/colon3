@@ -12,6 +12,7 @@ struct NowPlayingView: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var router: AppRouter
     @State private var mode: Mode = .artwork
     @State private var showEqualizer = false
 
@@ -131,11 +132,36 @@ struct NowPlayingView: View {
                 Label("Equalizer", systemImage: "slider.vertical.3")
             }
             Button {
+                router.addToPlaylist([track])
+            } label: {
+                Label("Add to Playlist…", systemImage: "text.badge.plus")
+            }
+            Divider()
+            Button {
                 mode = .lyrics
-                Task { await LyricsService.shared.forget(cacheKey: track.id) }
+                Task {
+                    await LyricsService.shared.forget(cacheKey: track.id)
+                    router.lyricsChanged()
+                }
             } label: {
                 Label("Search Lyrics Again", systemImage: "quote.bubble")
             }
+            Button {
+                mode = .lyrics
+                router.importLyrics(for: track)
+            } label: {
+                Label("Import Lyrics (.lrc)…", systemImage: "doc.text")
+            }
+            if FileManager.default.fileExists(atPath: LibraryStore.lyricsURL(for: track).path) {
+                Button(role: .destructive) {
+                    library.removeLyricsFile(for: track)
+                    router.lyricsChanged()
+                } label: {
+                    Label("Remove Lyrics File", systemImage: "doc.badge.minus")
+                }
+            }
+            ArtworkMenu(target: library.album(containing: track).map(ArtworkTarget.album) ?? .track(track))
+            Divider()
             ShareLink(item: track.url) {
                 Label("Share File", systemImage: "square.and.arrow.up")
             }
@@ -287,6 +313,13 @@ struct ScrubBar: View {
     private var badge: some View {
         if player.isSpatialPlayback {
             Label("Spatial", systemImage: "dot.radiowaves.left.and.right").font(.caption2.weight(.semibold))
+        } else if player.bitPerfect, player.output.isBitPerfect(enabled: true) {
+            Label("Bit-Perfect · \(Formatting.sampleRate(player.output.hardwareRate))", systemImage: "checkmark.seal.fill")
+                .font(.caption2.weight(.semibold))
+        } else if player.bitPerfect, let reason = player.output.blocker(enabled: true) {
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
         } else if let ext = player.current?.fileExtension, ["flac", "alac", "wav", "aif", "aiff"].contains(ext) {
             Label("Lossless", systemImage: "waveform").font(.caption2.weight(.semibold))
         } else if player.equalizer.isEnabled {
