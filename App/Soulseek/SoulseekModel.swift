@@ -67,6 +67,16 @@ struct DownloadItem: Identifiable {
     }
 }
 
+/// A file from a one-off "find this song" search (missing album tracks).
+struct TrackCandidate: Identifiable {
+    let username: String
+    let file: SharedFile
+    let slotFree: Bool
+    let speed: UInt32
+    let queueLength: UInt32
+    var id: String { username + "|" + file.path }
+}
+
 struct UploadItem: Identifiable {
     let id: DownloadID
     var state: UploadState
@@ -86,6 +96,8 @@ final class SoulseekModel: ObservableObject {
     @Published private(set) var currentQuery = ""
     @Published private(set) var downloads: [DownloadItem] = []
     @Published private(set) var uploads: [UploadItem] = []
+    @Published private(set) var trackCandidates: [TrackCandidate] = []
+    @Published private(set) var isFindingTrack = false
     @Published private(set) var logLines: [String] = []
     @Published var username: String = UserDefaults.standard.string(forKey: "username") ?? ""
     @Published var audioOnly = true {
@@ -102,8 +114,12 @@ final class SoulseekModel: ObservableObject {
 
     let client: SoulseekClient
     let library: LibraryStore
+    /// Set by the app; receives full folder listings for the missing-songs view.
+    weak var completeness: AlbumCompletenessStore?
 
     private var searchToken: UInt32?
+    private var trackSearchToken: UInt32?
+    private var trackSearchTitle = ""
     private var responses: [SearchResponse] = []
     private var pendingResponses: [SearchResponse] = []
     private var flushScheduled = false
@@ -173,6 +189,42 @@ final class SoulseekModel: ObservableObject {
         searchToken = client.search(trimmed)
     }
 
+    /// Separate from the main search so it doesn't replace what's on the Search tab.
+    func findTrack(artist: String, title: String) {
+        guard isLoggedIn else { return }
+        trackCandidates = []
+        trackSearchTitle = AlbumCompletenessStore.normalizeTitle(title)
+        isFindingTrack = true
+        let query = ResultFilters.terms("\(artist) \(title)").joined(separator: " ")
+        trackSearchToken = client.search(query)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            self?.isFindingTrack = false
+        }
+    }
+
+    private func addTrackCandidates(from response: SearchResponse) {
+        let wanted = trackSearchTitle
+        let matches = response.files.filter { file in
+            guard LibraryStore.audioExtensions.contains(file.fileExtension) else { return false }
+            let name = AlbumCompletenessStore.normalizeTitle((file.filename as NSString).deletingPathExtension)
+            return wanted.isEmpty || name.contains(wanted)
+        }
+        guard !matches.isEmpty else { return }
+        trackCandidates += matches.prefix(5).map {
+            TrackCandidate(username: response.username, file: $0, slotFree: response.slotFree,
+                           speed: response.averageSpeed, queueLength: response.queueLength)
+        }
+        trackCandidates.sort { lhs, rhs in
+            if lhs.slotFree != rhs.slotFree { return lhs.slotFree }
+            let left = lhs.file.attributes.bitDepth != nil ? 2_000 : Int(lhs.file.attributes.bitrate ?? 0)
+            let right = rhs.file.attributes.bitDepth != nil ? 2_000 : Int(rhs.file.attributes.bitrate ?? 0)
+            if left != right { return left > right }
+            return lhs.speed > rhs.speed
+        }
+        if trackCandidates.count > 60 { trackCandidates.removeLast(trackCandidates.count - 60) }
+    }
+
     func folder(withID id: String) -> FolderResult? {
         results.first { $0.id == id }
     }
@@ -231,24 +283,28 @@ final class SoulseekModel: ObservableObject {
         fetchCover(username: folder.username, folder: folder.folder, knownImages: folder.images)
     }
 
-    /// Grabs the album's cover image from the peer so the library has local art. Uses images
-    /// already seen in search results, otherwise asks the peer for the folder listing.
+    /// Once per folder: asks the peer for the full listing, which gives the album's cover image
+    /// (downloaded so the library has local art) and its complete tracklist (for missing songs).
     private func fetchCover(username: String, folder: String, knownImages: [SharedFile]) {
         let key = username + "|" + folder
         guard !coverRequested.contains(key) else { return }
         coverRequested.insert(key)
 
-        if let best = Self.bestCover(knownImages) {
-            client.download(username: username, file: best)
-            return
-        }
         client.browseFolder(username: username, folder: folder) { [weak self] files in
-            guard let self, let files else { return }
-            let images = files.filter { $0.folder == folder && LibraryStore.imageExtensions.contains($0.fileExtension) }
-            if let best = Self.bestCover(images) {
+            guard let self else { return }
+            if let files {
+                self.completeness?.recordListing(username: username, remoteFolder: folder, files: files)
+            }
+            let images = (files ?? []).filter { $0.folder == folder && LibraryStore.imageExtensions.contains($0.fileExtension) }
+            if let best = Self.bestCover(images.isEmpty ? knownImages : images) {
                 self.client.download(username: username, file: best)
             }
         }
+    }
+
+    /// Downloads a missing song straight into the album's existing folder.
+    func downloadMissing(_ file: SharedFile, from username: String, into album: Album) {
+        client.download(username: username, file: file, folderName: album.folder.lastPathComponent)
     }
 
     static func bestCover(_ images: [SharedFile]) -> SharedFile? {
@@ -303,6 +359,10 @@ final class SoulseekModel: ObservableObject {
             if case let .failed(message) = state { appendLog(message) }
 
         case let .searchResponse(response):
+            if response.token == trackSearchToken {
+                addTrackCandidates(from: response)
+                return
+            }
             guard response.token == searchToken else { return }
             pendingResponses.append(response)
             if !flushScheduled {

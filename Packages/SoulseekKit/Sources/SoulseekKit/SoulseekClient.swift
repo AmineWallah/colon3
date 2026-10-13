@@ -141,7 +141,9 @@ public final class SoulseekClient: @unchecked Sendable {
         return token
     }
 
-    public func download(username: String, file: SharedFile) {
+    /// `folderName` overrides the library folder the file lands in (default: the peer's folder
+    /// name), e.g. to drop a missing track into an existing album's folder.
+    public func download(username: String, file: SharedFile, folderName: String? = nil) {
         queue.async {
             let id = DownloadID(username: username, path: file.path)
             if let existing = self.downloads[id] {
@@ -150,7 +152,7 @@ public final class SoulseekClient: @unchecked Sendable {
                 default: return  // Already in progress or done
                 }
             }
-            self.downloads[id] = DownloadRecord(id: id, state: .requesting, size: file.size)
+            self.downloads[id] = DownloadRecord(id: id, state: .requesting, size: file.size, folderName: folderName)
             self.emitDownload(id)
             self.requestQueuePlace(id)
         }
@@ -802,7 +804,8 @@ public final class SoulseekClient: @unchecked Sendable {
 
     private func moveToLibrary(_ source: URL, id: DownloadID) throws -> URL {
         let file = SharedFile(path: id.path, size: 0)
-        let folder = Self.sanitize(file.folderName.isEmpty ? id.username : file.folderName)
+        let folder = downloads[id]?.folderName.map(Self.sanitize)
+            ?? Self.libraryFolderName(forRemoteFolder: file.folderName.isEmpty ? id.username : file.folderName)
         let directory = downloadDirectory.appendingPathComponent(folder, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -818,6 +821,11 @@ public final class SoulseekClient: @unchecked Sendable {
         }
         try FileManager.default.moveItem(at: source, to: destination)
         return destination
+    }
+
+    /// The library folder a download from this remote folder lands in.
+    public static func libraryFolderName(forRemoteFolder name: String) -> String {
+        sanitize(name)
     }
 
     private static func sanitize(_ name: String) -> String {
@@ -1076,6 +1084,7 @@ private struct DownloadRecord {
     var received: UInt64 = 0
     var token: UInt32?
     var retries = 0
+    var folderName: String?
 }
 
 private struct FolderBrowse {

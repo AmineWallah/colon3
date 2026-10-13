@@ -26,7 +26,7 @@ final class LibraryStore: ObservableObject {
 
     nonisolated private static var cacheURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("library-cache.json")
+            .appendingPathComponent("library-cache-v2.json")  // v2: adds MusicBrainz IDs, forces one re-read
     }
 
     nonisolated static let audioExtensions: Set<String> = ["mp3", "m4a", "m4b", "mp4", "aac", "alac", "flac", "wav", "aif", "aiff", "caf"]
@@ -161,7 +161,8 @@ final class LibraryStore: ObservableObject {
                 duration: info.duration,
                 addedAt: Date(timeIntervalSince1970: file.modified),
                 isSpatial: info.isSpatial,
-                hasEmbeddedArt: info.hasEmbeddedArt))
+                hasEmbeddedArt: info.hasEmbeddedArt,
+                musicBrainzAlbumID: info.musicBrainzAlbumID))
             let virtualPath = (["colon3"] + file.relativePath.split(separator: "/").map(String.init)).joined(separator: "\\")
             shares.append(LocalShare(virtualPath: virtualPath, url: file.url, size: UInt64(max(file.size, 0))))
         }

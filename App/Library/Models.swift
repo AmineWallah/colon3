@@ -17,6 +17,7 @@ struct Track: Identifiable, Hashable {
     /// Multichannel or Dolby (E-AC-3) audio: played through AVPlayer with spatial audio, no EQ.
     var isSpatial: Bool
     var hasEmbeddedArt: Bool
+    var musicBrainzAlbumID: String?
 
     var folder: URL { url.deletingLastPathComponent() }
     var fileExtension: String { url.pathExtension.lowercased() }

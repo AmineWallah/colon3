@@ -13,6 +13,8 @@ struct TrackInfo: Codable, Equatable {
     var duration: Double = 0
     var isSpatial = false
     var hasEmbeddedArt = false
+    /// MusicBrainz release ID, written by Picard and most taggers (FLAC only for now).
+    var musicBrainzAlbumID: String?
 }
 
 enum MetadataReader {
@@ -30,6 +32,7 @@ enum MetadataReader {
             info.duration = flac.duration
             info.isSpatial = flac.channels > 2
             info.hasEmbeddedArt = flac.hasPicture
+            info.musicBrainzAlbumID = flac.tags["MUSICBRAINZ_ALBUMID"]
         } else {
             info = await readWithAVFoundation(url: url)
         }

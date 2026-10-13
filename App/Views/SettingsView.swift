@@ -11,6 +11,8 @@ struct SettingsView: View {
     @AppStorage(AppSettings.scrobblingKey) private var scrobbling = true
     @AppStorage(AppSettings.backgroundTransfersKey) private var backgroundTransfers = true
     @AppStorage(AppSettings.transferActivityKey) private var transferActivity = true
+    @AppStorage(AppSettings.showMissingKey) private var showMissing = true
+    @AppStorage(AppSettings.musicBrainzKey) private var musicBrainz = true
 
     @State private var username = ""
     @State private var password = ""
@@ -35,10 +37,13 @@ struct SettingsView: View {
                 Section {
                     Toggle("Look Up Missing Artwork", isOn: $artworkLookup)
                     Toggle("Fetch Lyrics", isOn: $lyricsLookup)
+                    Toggle("Show Missing Album Songs", isOn: $showMissing)
+                    Toggle("Look Up Tracklists on MusicBrainz", isOn: $musicBrainz)
+                        .disabled(!showMissing)
                 } header: {
                     Text("Online")
                 } footer: {
-                    Text("Artwork comes from the iTunes Search API when a song has none of its own; lyrics come from LRCLIB.")
+                    Text("Artwork comes from the iTunes Search API when a song has none of its own; lyrics come from LRCLIB. Missing songs come from the Soulseek folder an album was downloaded from, or from MusicBrainz otherwise.")
                 }
 
                 Section {

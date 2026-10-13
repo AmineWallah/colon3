@@ -7,6 +7,7 @@ struct Colon3App: App {
     @StateObject private var player: Player
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var lastfm: LastFM
+    @StateObject private var completeness: AlbumCompletenessStore
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
 
@@ -17,6 +18,9 @@ struct Colon3App: App {
         player.library = library
         player.scrobbler = lastfm
         let soulseek = SoulseekModel(library: library)
+        let completeness = AlbumCompletenessStore()
+        soulseek.completeness = completeness
+        _completeness = StateObject(wrappedValue: completeness)
         transferMonitor = TransferMonitor(soulseek: soulseek, player: player)
         _library = StateObject(wrappedValue: library)
         _soulseek = StateObject(wrappedValue: soulseek)
@@ -33,6 +37,7 @@ struct Colon3App: App {
                 .environmentObject(player.clock)
                 .environmentObject(favorites)
                 .environmentObject(lastfm)
+                .environmentObject(completeness)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()

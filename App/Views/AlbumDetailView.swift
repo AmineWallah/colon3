@@ -1,3 +1,4 @@
+import SoulseekKit
 import SwiftUI
 
 struct AlbumDetailView: View {
@@ -6,21 +7,59 @@ struct AlbumDetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var completeness: AlbumCompletenessStore
+    @EnvironmentObject private var soulseek: SoulseekModel
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppSettings.showMissingKey) private var showMissingSetting = true
     @State private var pendingDelete: [Track]?
+    @State private var findingTrack: MissingTrack?
 
     /// Re-read after rescans so edits and deletions show up.
     private var current: Album { library.album(id: album.id) ?? album }
 
+    private enum Row: Identifiable {
+        case track(Track, number: Int)
+        case missing(MissingTrack)
+
+        var id: String {
+            switch self {
+            case let .track(track, _): return "t:" + track.id
+            case let .missing(missing): return "m:" + missing.id
+            }
+        }
+
+        var sortNumber: Int {
+            switch self {
+            case let .track(_, number): return number
+            case let .missing(missing): return missing.number ?? 10_000
+            }
+        }
+    }
+
     private struct Disc: Identifiable {
         let number: Int
-        let tracks: [Track]
+        let rows: [Row]
         var id: Int { number }
     }
 
-    private var discs: [Disc] {
-        let grouped = Dictionary(grouping: current.tracks, by: { $0.discNumber ?? 1 })
-        return grouped.keys.sorted().map { Disc(number: $0, tracks: grouped[$0] ?? []) }
+    private var missing: [MissingTrack] {
+        guard showMissingSetting, !completeness.isHidden(current) else { return [] }
+        return completeness.results[current.id]?.missing ?? []
+    }
+
+    private func discs(_ album: Album) -> [Disc] {
+        var rows: [Int: [Row]] = [:]
+        for disc in Set(album.tracks.map { $0.discNumber ?? 1 }) {
+            let tracks = album.tracks.filter { ($0.discNumber ?? 1) == disc }
+            rows[disc] = tracks.enumerated().map { offset, track in Row.track(track, number: track.trackNumber ?? offset + 1) }
+        }
+        for entry in missing { rows[entry.disc, default: []].append(.missing(entry)) }
+        return rows.keys.sorted().map { number in
+            Disc(number: number, rows: (rows[number] ?? []).enumerated().sorted { lhs, rhs in
+                if lhs.element.sortNumber != rhs.element.sortNumber { return lhs.element.sortNumber < rhs.element.sortNumber }
+                return lhs.offset < rhs.offset
+            }.map(\.element))
+        }
     }
 
     var body: some View {
@@ -71,8 +110,9 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 20)
 
             LazyVStack(alignment: .leading, spacing: 0) {
-                let showDiscs = discs.count > 1
-                ForEach(discs) { disc in
+                let allDiscs = discs(album)
+                let showDiscs = allDiscs.count > 1
+                ForEach(allDiscs) { disc in
                     if showDiscs {
                         Text("Disc \(disc.number)")
                             .font(.headline)
@@ -80,24 +120,32 @@ struct AlbumDetailView: View {
                             .padding(.top, 18)
                             .padding(.bottom, 4)
                     }
-                    ForEach(Array(disc.tracks.enumerated()), id: \.element.id) { offset, track in
-                        Button {
-                            if let index = album.tracks.firstIndex(of: track) { player.play(album.tracks, startAt: index) }
-                        } label: {
-                            TrackRow(track: track, number: track.trackNumber ?? offset + 1, showArtwork: false,
-                                     subtitle: track.artist != album.artist ? track.artist : nil)
+                    ForEach(disc.rows) { row in
+                        switch row {
+                        case let .track(track, number):
+                            Button {
+                                if let index = album.tracks.firstIndex(of: track) { player.play(album.tracks, startAt: index) }
+                            } label: {
+                                TrackRow(track: track, number: number, showArtwork: false,
+                                         subtitle: track.artist != album.artist ? track.artist : nil)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                TrackMenuItems(tracks: [track]) { pendingDelete = $0 }
+                            }
+                        case let .missing(entry):
+                            MissingTrackRow(track: entry, album: album) { findingTrack = entry }
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            TrackMenuItems(tracks: [track]) { pendingDelete = $0 }
                         }
                         Divider().padding(.leading, 56)
                     }
                 }
             }
             .padding(.top, 16)
+            .task(id: "\(album.id)#\(album.tracks.count)") { completeness.refresh(album) }
 
             Text("\(album.tracks.count) song\(album.tracks.count == 1 ? "" : "s"), \(minutes(album.duration))")
                 .font(.footnote)
@@ -115,6 +163,7 @@ struct AlbumDetailView: View {
                 }
                 Menu {
                     TrackMenuItems(tracks: album.tracks, album: album) { pendingDelete = $0 }
+                    missingSongsMenu(album)
                     Button {
                         Task {
                             await ArtworkStore.shared.invalidate(.album(album))
@@ -128,6 +177,10 @@ struct AlbumDetailView: View {
                 }
             }
         }
+        .sheet(item: $findingTrack) { track in
+            FindTrackSheet(track: track, album: current)
+                .presentationDetents([.medium, .large])
+        }
         .confirmDelete($pendingDelete) { deleted in
             // Leave the page once the whole album is gone.
             let remaining = Set(album.tracks.map(\.id)).subtracting(deleted.map(\.id))
@@ -135,8 +188,41 @@ struct AlbumDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func missingSongsMenu(_ album: Album) -> some View {
+        if showMissingSetting {
+            Divider()
+            let hidden = completeness.isHidden(album)
+            Button {
+                completeness.setHidden(album, !hidden)
+            } label: {
+                Label(hidden ? "Show Missing Songs" : "Hide Missing Songs", systemImage: hidden ? "eye" : "eye.slash")
+            }
+            let downloadable = missing.compactMap { entry -> (String, SharedFile)? in
+                if case let .soulseek(username, file) = entry.source { return (username, file) }
+                return nil
+            }
+            if !downloadable.isEmpty {
+                Button {
+                    for (username, file) in downloadable { soulseek.downloadMissing(file, from: username, into: album) }
+                } label: {
+                    Label("Download \(downloadable.count) Missing", systemImage: "arrow.down.circle")
+                }
+            }
+            Button {
+                completeness.refresh(album, force: true)
+            } label: {
+                Label("Check Tracklist Again", systemImage: "arrow.clockwise")
+            }
+        }
+    }
+
     private func details(_ album: Album) -> String {
-        [album.year.map(String.init), "\(album.tracks.count) songs"].compactMap { $0 }.joined(separator: " · ")
+        let missingCount = missing.count
+        let songs = missingCount > 0
+            ? "\(album.tracks.count) of \(album.tracks.count + missingCount) songs"
+            : "\(album.tracks.count) songs"
+        return [album.year.map(String.init), songs].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func minutes(_ seconds: Double) -> String {
@@ -218,5 +304,126 @@ struct ArtistDetailView: View {
         .padding(.bottom, 24)
         .navigationTitle(artist.name)
         .confirmDelete($pendingDelete)
+    }
+}
+
+/// A song the album should have but doesn't: greyed out, with a way to get it.
+struct MissingTrackRow: View {
+    let track: MissingTrack
+    let album: Album
+    let onFind: () -> Void
+
+    @EnvironmentObject private var soulseek: SoulseekModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(track.number.map(String.init) ?? "–")
+                .font(.body.monospacedDigit())
+                .frame(minWidth: 24, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title).lineLimit(1)
+                Text("Not in your library").font(.caption)
+            }
+            Spacer(minLength: 8)
+            if let duration = track.duration {
+                Text(Formatting.duration(duration)).font(.subheadline.monospacedDigit())
+            }
+            action
+        }
+        .foregroundStyle(.secondary)
+        .opacity(0.75)
+    }
+
+    @ViewBuilder
+    private var action: some View {
+        switch track.source {
+        case let .soulseek(username, file):
+            switch soulseek.state(of: file, from: username) {
+            case .none, .some(.failed):
+                Button {
+                    soulseek.downloadMissing(file, from: username, into: album)
+                } label: {
+                    Image(systemName: "arrow.down.circle").font(.title3).foregroundStyle(.tint)
+                }
+                .buttonStyle(.borderless)
+                .disabled(!soulseek.isLoggedIn)
+            case .some(.completed):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            default:
+                ProgressView()
+            }
+        case .musicBrainz:
+            Button(action: onFind) {
+                Image(systemName: "magnifyingglass.circle").font(.title3).foregroundStyle(.tint)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!soulseek.isLoggedIn)
+        }
+    }
+}
+
+/// Searches Soulseek for one missing song and drops the chosen file into the album's folder.
+struct FindTrackSheet: View {
+    let track: MissingTrack
+    let album: Album
+
+    @EnvironmentObject private var soulseek: SoulseekModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if soulseek.trackCandidates.isEmpty {
+                        HStack(spacing: 10) {
+                            if soulseek.isFindingTrack { ProgressView() }
+                            Text(soulseek.isFindingTrack ? "Searching…" : "No matching files found.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(soulseek.trackCandidates) { candidate in
+                        Button {
+                            soulseek.downloadMissing(candidate.file, from: candidate.username, into: album)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(candidate.file.filename).lineLimit(2)
+                                HStack(spacing: 8) {
+                                    Text(quality(candidate.file))
+                                    Text(Formatting.bytes(candidate.file.size))
+                                    Label(candidate.username, systemImage: "person").lineLimit(1)
+                                    if candidate.slotFree {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    } else {
+                                        Text("Queue \(candidate.queueLength)").foregroundStyle(.orange)
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } footer: {
+                    Text("Tap a file to download it into \(album.title).")
+                }
+            }
+            .navigationTitle(track.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .task { soulseek.findTrack(artist: album.artist, title: track.title) }
+        }
+    }
+
+    private func quality(_ file: SharedFile) -> String {
+        if let depth = file.attributes.bitDepth, let rate = file.attributes.sampleRate {
+            return "\(file.fileExtension.uppercased()) \(depth)/\(Formatting.kilohertz(rate))"
+        }
+        if let bitrate = file.attributes.bitrate { return "\(file.fileExtension.uppercased()) \(bitrate)k" }
+        return file.fileExtension.uppercased()
     }
 }
