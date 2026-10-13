@@ -101,25 +101,35 @@ enum MiniPlayerStyle {
 /// Adds the floating pill to a tab's content when the native accessory isn't available.
 struct FallbackMiniPlayer: ViewModifier {
     let open: () -> Void
+    @EnvironmentObject private var player: Player
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if MiniPlayerStyle.usesTabAccessory {
             content
         } else {
-            content.safeAreaInset(edge: .bottom, spacing: 0) { FloatingMiniPlayer(open: open) }
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                if player.current != nil { FloatingMiniPlayer(open: open) }
+            }
         }
     }
 }
 
 /// Native bottom accessory on iOS 26+.
 struct TabAccessoryMiniPlayer: ViewModifier {
+    /// Show the pill only while a track is loaded (playing or paused).
+    let isVisible: Bool
     let open: () -> Void
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26, *) {
+        if #available(iOS 26.1, *) {
+            // isEnabled hides the accessory cleanly; toggling the modifier itself rebuilds the TabView.
+            content
+                .tabViewBottomAccessory(isEnabled: isVisible) { AccessoryMiniPlayer(open: open) }
+                .tabBarMinimizeBehavior(.onScrollDown)
+        } else if #available(iOS 26, *) {
             content
                 .tabViewBottomAccessory { AccessoryMiniPlayer(open: open) }
                 .tabBarMinimizeBehavior(.onScrollDown)

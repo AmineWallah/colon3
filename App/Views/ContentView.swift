@@ -6,6 +6,7 @@ struct ContentView: View {
     }
 
     @EnvironmentObject private var soulseek: SoulseekModel
+    @EnvironmentObject private var player: Player
     @AppStorage("selectedTab") private var tab: AppTab = .library
     @AppStorage(AccentPalette.storageKey) private var accentHex = AccentPalette.defaultHex
     @State private var showPlayer = false
@@ -26,7 +27,7 @@ struct ContentView: View {
                 SettingsView()
             }
         }
-        .modifier(TabAccessoryMiniPlayer(open: openPlayer))
+        .modifier(TabAccessoryMiniPlayer(isVisible: player.current != nil, open: openPlayer))
         .sheet(isPresented: $showPlayer) {
             NowPlayingView()
                 .tint(Color(hex: accentHex))

@@ -8,6 +8,7 @@ struct Colon3App: App {
     @StateObject private var favorites = FavoritesStore()
     @StateObject private var lastfm: LastFM
     @Environment(\.scenePhase) private var scenePhase
+    private let transferMonitor: TransferMonitor
 
     init() {
         let library = LibraryStore()
@@ -15,8 +16,10 @@ struct Colon3App: App {
         let lastfm = LastFM()
         player.library = library
         player.scrobbler = lastfm
+        let soulseek = SoulseekModel(library: library)
+        transferMonitor = TransferMonitor(soulseek: soulseek, player: player)
         _library = StateObject(wrappedValue: library)
-        _soulseek = StateObject(wrappedValue: SoulseekModel(library: library))
+        _soulseek = StateObject(wrappedValue: soulseek)
         _player = StateObject(wrappedValue: player)
         _lastfm = StateObject(wrappedValue: lastfm)
     }

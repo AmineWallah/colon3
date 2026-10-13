@@ -14,6 +14,11 @@ struct SearchView: View {
                 }
                 if !soulseek.currentQuery.isEmpty {
                     Section {
+                        FilterChips(showAll: $showFilters)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                    Section {
                         HStack {
                             Text("\(soulseek.responseCount) users · \(soulseek.results.count) folders")
                             if soulseek.hiddenCount > 0 {
@@ -217,13 +222,15 @@ struct SearchFiltersView: View {
             Form {
                 Section {
                     Picker("Sort By", selection: $soulseek.filters.sort) {
-                        ForEach(ResultFilters.Sort.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(ResultFilters.Sort.allCases) { sort in
+                            Label(sort.rawValue, systemImage: sort.systemImage).tag(sort)
+                        }
                     }
                 }
 
                 Section("Quality") {
-                    Picker("Format", selection: $soulseek.filters.format) {
-                        ForEach(ResultFilters.Format.allCases) { Text($0.rawValue).tag($0) }
+                    Picker("File Type", selection: $soulseek.filters.fileType) {
+                        ForEach(ResultFilters.FileType.allCases) { Text($0.rawValue).tag($0) }
                     }
                     Picker("Minimum Bitrate", selection: $soulseek.filters.minBitrate) {
                         ForEach(ResultFilters.bitrateChoices, id: \.self) { kbps in
@@ -268,5 +275,66 @@ struct SearchFiltersView: View {
                 }
             }
         }
+    }
+}
+
+/// One-tap sort and filter controls above the results.
+struct FilterChips: View {
+    @Binding var showAll: Bool
+    @EnvironmentObject private var soulseek: SoulseekModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Sort By", selection: $soulseek.filters.sort) {
+                        ForEach(ResultFilters.Sort.allCases) { sort in
+                            Label(sort.rawValue, systemImage: sort.systemImage).tag(sort)
+                        }
+                    }
+                } label: {
+                    chip(soulseek.filters.sort.rawValue, systemImage: "arrow.up.arrow.down", active: true)
+                }
+
+                Menu {
+                    Picker("File Type", selection: $soulseek.filters.fileType) {
+                        ForEach(ResultFilters.FileType.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                } label: {
+                    chip(soulseek.filters.fileType.shortLabel, systemImage: "doc", active: soulseek.filters.fileType != .any)
+                }
+
+                Button {
+                    soulseek.filters.freeSlotOnly.toggle()
+                } label: {
+                    chip("Free Slot", systemImage: "checkmark.circle", active: soulseek.filters.freeSlotOnly)
+                }
+
+                Button {
+                    soulseek.filters.minFiles = soulseek.filters.minFiles > 1 ? 1 : 6
+                } label: {
+                    chip("Albums", systemImage: "square.stack", active: soulseek.filters.minFiles > 1)
+                }
+
+                Button {
+                    showAll = true
+                } label: {
+                    chip("More", systemImage: "slider.horizontal.3", active: false)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func chip(_ title: String, systemImage: String, active: Bool) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(active ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .background(active ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary.opacity(0.15)), in: Capsule())
     }
 }

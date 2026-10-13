@@ -191,7 +191,10 @@ final class Player: ObservableObject {
 
     func resume() {
         guard let backend, current != nil else { return }
-        try? AVAudioSession.sharedInstance().setActive(true)
+        let session = AVAudioSession.sharedInstance()
+        // The background keeper may have switched the session to mix-with-others; take it back.
+        try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+        try? session.setActive(true)
         backend.play()
         isPlaying = backend.isPlaying || backend === avPlayer
         startTimer()

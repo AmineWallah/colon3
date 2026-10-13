@@ -67,6 +67,17 @@ struct DownloadItem: Identifiable {
     }
 }
 
+struct UploadItem: Identifiable {
+    let id: DownloadID
+    var state: UploadState
+    var sent: UInt64
+    var size: UInt64
+
+    var filename: String { SharedFile(path: id.path, size: size).filename }
+    var progress: Double { size > 0 ? min(1, Double(sent) / Double(size)) : 0 }
+    var isActive: Bool { state == .queued || state == .transferring }
+}
+
 @MainActor
 final class SoulseekModel: ObservableObject {
     @Published private(set) var connection: ClientState = .disconnected
@@ -74,6 +85,7 @@ final class SoulseekModel: ObservableObject {
     @Published private(set) var responseCount = 0
     @Published private(set) var currentQuery = ""
     @Published private(set) var downloads: [DownloadItem] = []
+    @Published private(set) var uploads: [UploadItem] = []
     @Published private(set) var logLines: [String] = []
     @Published var username: String = UserDefaults.standard.string(forKey: "username") ?? ""
     @Published var audioOnly = true {
@@ -202,7 +214,7 @@ final class SoulseekModel: ObservableObject {
         }
         let kept = all.filter { filters.accepts($0) }
         hiddenCount = all.count - kept.count
-        results = filters.ordered(kept)
+        results = filters.ordered(kept, query: currentQuery)
     }
 
     // MARK: Downloads
@@ -262,7 +274,21 @@ final class SoulseekModel: ObservableObject {
 
     func clearFinished() {
         downloads.removeAll { !$0.isActive }
+        uploads.removeAll { !$0.isActive }
     }
+
+    func cancelAll(from username: String) {
+        for item in downloads where item.id.username == username { client.cancel(item.id) }
+        downloads.removeAll { $0.id.username == username }
+    }
+
+    func retryFailed(from username: String) {
+        for item in downloads where item.id.username == username {
+            if case .failed = item.state { client.retry(item.id) }
+        }
+    }
+
+    var activeUploadCount: Int { uploads.filter(\.isActive).count }
 
     func state(of file: SharedFile, from username: String) -> DownloadState? {
         downloads.first { $0.id == DownloadID(username: username, path: file.path) }?.state
@@ -306,6 +332,16 @@ final class SoulseekModel: ObservableObject {
                 } else {
                     library.rescan()
                 }
+            }
+
+        case let .upload(update):
+            if let index = uploads.firstIndex(where: { $0.id == update.id }) {
+                uploads[index].state = update.state
+                uploads[index].sent = update.sent
+                uploads[index].size = update.size
+            } else {
+                uploads.insert(UploadItem(id: update.id, state: update.state, sent: update.sent, size: update.size), at: 0)
+                if uploads.count > 100 { uploads.removeLast(uploads.count - 100) }
             }
 
         case let .log(line):

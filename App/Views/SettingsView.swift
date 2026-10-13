@@ -9,6 +9,8 @@ struct SettingsView: View {
     @AppStorage(AppSettings.artworkLookupKey) private var artworkLookup = true
     @AppStorage(AppSettings.lyricsLookupKey) private var lyricsLookup = true
     @AppStorage(AppSettings.scrobblingKey) private var scrobbling = true
+    @AppStorage(AppSettings.backgroundTransfersKey) private var backgroundTransfers = true
+    @AppStorage(AppSettings.transferActivityKey) private var transferActivity = true
 
     @State private var username = ""
     @State private var password = ""
@@ -37,6 +39,15 @@ struct SettingsView: View {
                     Text("Online")
                 } footer: {
                     Text("Artwork comes from the iTunes Search API when a song has none of its own; lyrics come from LRCLIB.")
+                }
+
+                Section {
+                    Toggle("Keep Transfers Running in Background", isOn: $backgroundTransfers)
+                    Toggle("Show Transfers in Dynamic Island", isOn: $transferActivity)
+                } header: {
+                    Text("Transfers")
+                } footer: {
+                    Text("When nothing is playing, colon3 plays silence (mixed under other audio) so iOS doesn't freeze transfers in the background, like iTorrent does. It costs some battery and stops when transfers finish.")
                 }
 
                 LastFMSection(scrobbling: $scrobbling)

@@ -1,5 +1,6 @@
 *.xcodeproj
 Support/Info.plist
+Support/Widget-Info.plist
 build/
 DerivedData/
 .build/

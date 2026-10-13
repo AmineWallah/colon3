@@ -16,8 +16,10 @@ targets:
     platform: iOS
     sources:
       - App
+      - Shared
     dependencies:
       - package: SoulseekKit
+      - target: TransfersWidget
     info:
       path: Support/Info.plist
       properties:
@@ -31,6 +33,7 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
         # Lets Files and other apps "Open in" / "Copy to" colon3.
         CFBundleDocumentTypes:
           - CFBundleTypeName: Audio
@@ -47,7 +50,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
@@ -55,3 +58,28 @@ targets:
         # Set this to your Apple ID team in Xcode (Signing & Capabilities) when building in the VM.
         DEVELOPMENT_TEAM: ""
     scheme: {}
+
+  # Live Activity (Dynamic Island / Lock Screen) for transfers.
+  TransfersWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget
+      - Shared
+    info:
+      path: Support/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: colon3 Transfers
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aminewallah.colon3.TransfersWidget
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""

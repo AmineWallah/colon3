@@ -75,6 +75,8 @@ enum AppSettings {
     static let artworkLookupKey = "artworkLookup"
     static let lyricsLookupKey = "lyricsLookup"
     static let scrobblingKey = "lastfmScrobbling"
+    static let backgroundTransfersKey = "backgroundTransfers"
+    static let transferActivityKey = "transferLiveActivity"
 
     static var artworkLookupEnabled: Bool { flag(artworkLookupKey) }
     static var lyricsLookupEnabled: Bool { flag(lyricsLookupKey) }

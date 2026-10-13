@@ -51,10 +51,26 @@ public struct LocalShare: Sendable {
     }
 }
 
+public enum UploadState: Equatable, Sendable {
+    case queued
+    case transferring
+    case completed
+    case failed
+}
+
+/// Progress of a file we're sending to a peer. `id.username` is the downloader.
+public struct UploadUpdate: Sendable {
+    public let id: DownloadID
+    public let state: UploadState
+    public let sent: UInt64
+    public let size: UInt64
+}
+
 public enum ClientEvent: Sendable {
     case state(ClientState)
     case searchResponse(SearchResponse)
     case download(DownloadUpdate)
+    case upload(UploadUpdate)
     case log(String)
 }
 
@@ -252,6 +268,9 @@ public final class SoulseekClient: @unchecked Sendable {
             default:
                 break
             }
+        }
+        for job in uploadQueue + [activeUpload].compactMap({ $0 }) {
+            emitUpload(username: job.username, path: job.path, state: .failed, sent: 0, size: job.share.size)
         }
         uploadQueue.removeAll()
         for token in Array(folderBrowses.keys) { finishBrowse(token: token, files: nil) }
@@ -817,6 +836,7 @@ public final class SoulseekClient: @unchecked Sendable {
         if activeUpload?.username == username && activeUpload?.path == path { return }
         if uploadQueue.contains(where: { $0.username == username && $0.path == path }) { return }
         uploadQueue.append(UploadJob(username: username, path: path, share: share))
+        emitUpload(username: username, path: path, state: .queued, sent: 0, size: share.size)
         startNextUpload()
     }
 
@@ -890,12 +910,15 @@ public final class SoulseekClient: @unchecked Sendable {
 
         do {
             let handle = try FileHandle(forReadingFrom: job.share.url)
-            try handle.seek(toOffset: min(offset, job.share.size))
+            let start = min(offset, job.share.size)
+            try handle.seek(toOffset: start)
             link.handle = handle
+            link.sentBytes = start
         } catch {
             closeFile(link, reason: nil)
             return
         }
+        emitUpload(username: job.username, path: job.path, state: .transferring, sent: link.sentBytes, size: job.share.size)
         sendNextUploadChunk(link)
     }
 
@@ -920,6 +943,12 @@ public final class SoulseekClient: @unchecked Sendable {
             if error != nil {
                 self.closeFile(link, reason: nil)
             } else {
+                link.sentBytes += UInt64(chunk.count)
+                if Date().timeIntervalSince(link.lastProgress) > 0.5, let job = self.activeUpload {
+                    link.lastProgress = Date()
+                    self.emitUpload(username: job.username, path: job.path, state: .transferring,
+                                    sent: link.sentBytes, size: job.share.size)
+                }
                 self.sendNextUploadChunk(link)
             }
         })
@@ -927,6 +956,8 @@ public final class SoulseekClient: @unchecked Sendable {
 
     private func finishUpload(token: UInt32, succeeded: Bool) {
         guard let job = activeUpload, job.token == token else { return }
+        emitUpload(username: job.username, path: job.path, state: succeeded ? .completed : .failed,
+                   sent: succeeded ? job.share.size : 0, size: job.share.size)
         if succeeded {
             completedUploads += 1
             log("Uploaded \(job.path) to \(job.username)")
@@ -974,6 +1005,10 @@ public final class SoulseekClient: @unchecked Sendable {
     }
 
     private func tokenKey(_ username: String, _ token: UInt32) -> String { "\(username)|\(token)" }
+
+    private func emitUpload(username: String, path: String, state: UploadState, sent: UInt64, size: UInt64) {
+        emit(.upload(UploadUpdate(id: DownloadID(username: username, path: path), state: state, sent: sent, size: size)))
+    }
 
     private func emitDownload(_ id: DownloadID) {
         guard let record = downloads[id] else { return }
@@ -1024,6 +1059,7 @@ private final class FileLink {
     var handle: FileHandle?
     var isClosed = false
     var uploadDone = false
+    var sentBytes: UInt64 = 0
     var lastProgress = Date.distantPast
 
     init(username: String, connection: NWConnection, role: Role) {
