@@ -13,54 +13,68 @@ struct EqualizerView: View {
                 Toggle("Equalizer", isOn: $equalizer.isEnabled)
                     .font(.headline)
 
-                HStack {
-                    Text("Preset")
-                    Spacer()
-                    presetMenu
+                Picker("Type", selection: $equalizer.mode) {
+                    ForEach(Equalizer.Mode.allCases) { Text($0.label).tag($0) }
                 }
+                .pickerStyle(.segmented)
 
-                ResponseCurve(gains: equalizer.gains, enabled: equalizer.isEnabled)
-                    .frame(height: 90)
-
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(Equalizer.frequencies.indices, id: \.self) { index in
-                        VStack(spacing: 6) {
-                            Text(String(format: "%+.0f", equalizer.gains[index]))
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                            VerticalGainSlider(value: $equalizer.gains[index], range: Equalizer.gainRange)
-                                .frame(height: 200)
-                            Text(Equalizer.label(for: Equalizer.frequencies[index]))
-                                .font(.caption2.weight(.medium))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .disabled(!equalizer.isEnabled)
-                .opacity(equalizer.isEnabled ? 1 : 0.4)
-
-                VStack(alignment: .leading, spacing: 6) {
+                if equalizer.mode == .graphic {
                     HStack {
-                        Text("Preamp")
+                        Text("Preset")
                         Spacer()
-                        Text(String(format: "%+.1f dB", equalizer.preamp))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                        presetMenu
                     }
-                    Slider(value: $equalizer.preamp, in: -12...6, step: 0.5)
-                }
-                .disabled(!equalizer.isEnabled)
 
-                HStack {
-                    Button("Save as Preset…") {
-                        newName = ""
-                        naming = true
+                    ResponseCurve(gains: equalizer.gains, enabled: equalizer.isEnabled)
+                        .frame(height: 90)
+
+                    HStack(alignment: .top, spacing: 0) {
+                        ForEach(Equalizer.frequencies.indices, id: \.self) { index in
+                            VStack(spacing: 6) {
+                                Text(String(format: "%+.0f", equalizer.gains[index]))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                VerticalGainSlider(value: $equalizer.gains[index], range: Equalizer.gainRange)
+                                    .frame(height: 200)
+                                Text(Equalizer.label(for: Equalizer.frequencies[index]))
+                                    .font(.caption2.weight(.medium))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
                     }
-                    Spacer()
-                    Button("Reset", role: .destructive) { equalizer.reset() }
-                }
-                .buttonStyle(.bordered)
+                    .disabled(!equalizer.isEnabled)
+                    .opacity(equalizer.isEnabled ? 1 : 0.4)
 
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Preamp")
+                            Spacer()
+                            Text(String(format: "%+.1f dB", equalizer.preamp))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $equalizer.preamp, in: -12...6, step: 0.5)
+                    }
+                    .disabled(!equalizer.isEnabled)
+
+                    HStack {
+                        Button("Save as Preset…") {
+                            newName = ""
+                            naming = true
+                        }
+                        Spacer()
+                        Button("Reset", role: .destructive) { equalizer.reset() }
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    ParametricEQEditor(equalizer: equalizer)
+                }
+
+                if player.bitPerfect {
+                    Label("Bit-perfect mode is on, so the EQ is bypassed.", systemImage: "checkmark.seal")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
                 if player.isSpatialPlayback {
                     Label("The current track is spatial audio, which plays without the EQ.", systemImage: "info.circle")
                         .font(.footnote)

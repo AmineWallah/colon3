@@ -41,7 +41,7 @@ final class EngineBackend: PlaybackBackend {
 
     private var engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
-    let eq = AVAudioUnitEQ(numberOfBands: Equalizer.frequencies.count)
+    let eq = AVAudioUnitEQ(numberOfBands: Equalizer.maxBands)
 
     private var file: AVAudioFile?
     private var connectedFormat: AVAudioFormat?

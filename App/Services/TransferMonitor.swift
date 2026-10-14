@@ -24,6 +24,12 @@ final class TransferMonitor {
     private var lastSample = Date()
     private var speed: Double = 0
 
+    /// Everything in the current burst of transfers, finished ones included, so the island's
+    /// percentage climbs to 100% instead of resetting each time a file completes.
+    private struct Progress { var done: UInt64; var size: UInt64 }
+    private var downloadBatch: [DownloadID: Progress] = [:]
+    private var uploadBatch: [DownloadID: Progress] = [:]
+
     init(soulseek: SoulseekModel, player: Player, stats: StatsStore) {
         self.soulseek = soulseek
         self.player = player
@@ -97,15 +103,13 @@ final class TransferMonitor {
             endActivity(finished: false)
             return
         }
+        let fraction = batchFraction(downloads: downloads, uploads: uploads, busy: busy)
         if (busy || seeding), !isPlaying {
-            let tracked = activeDownloads.map { ($0.received, $0.size) } + sending.map { ($0.sent, $0.size) }
-            let total = tracked.reduce(UInt64(0)) { $0 + $1.1 }
-            let done = tracked.reduce(UInt64(0)) { $0 + $1.0 }
             let state = TransferActivityAttributes.ContentState(
                 downloading: moving.count,
                 uploading: sending.count,
                 queued: activeDownloads.count - moving.count,
-                fraction: total > 0 ? min(1, Double(done) / Double(total)) : 0,
+                fraction: fraction,
                 bytesPerSecond: moving.isEmpty && sending.isEmpty ? 0 : speed,
                 currentFile: moving.first?.filename ?? sending.first?.filename ?? "",
                 finished: false,
@@ -115,6 +119,45 @@ final class TransferMonitor {
         } else {
             endActivity(finished: !busy && !seeding)
         }
+    }
+
+    private func batchFraction(downloads: [DownloadItem], uploads: [UploadItem], busy: Bool) -> Double {
+        guard busy else {
+            downloadBatch.removeAll()
+            uploadBatch.removeAll()
+            return 0
+        }
+        var current: [DownloadID: Progress] = [:]
+        for item in downloads where !item.isArtwork {
+            switch item.state {
+            case .completed:
+                // Only files that were part of this burst count as done.
+                if downloadBatch[item.id] != nil { current[item.id] = Progress(done: item.size, size: item.size) }
+            case .failed:
+                break  // Leaves the batch; a retry adds it back.
+            default:
+                current[item.id] = Progress(done: min(item.received, item.size), size: item.size)
+            }
+        }
+        downloadBatch = current
+
+        var sent: [DownloadID: Progress] = [:]
+        for item in uploads {
+            switch item.state {
+            case .transferring:
+                sent[item.id] = Progress(done: min(item.sent, item.size), size: item.size)
+            case .completed:
+                if uploadBatch[item.id] != nil { sent[item.id] = Progress(done: item.size, size: item.size) }
+            default:
+                break
+            }
+        }
+        uploadBatch = sent
+
+        let all = Array(downloadBatch.values) + Array(uploadBatch.values)
+        let size = all.reduce(UInt64(0)) { $0 + $1.size }
+        let done = all.reduce(UInt64(0)) { $0 + $1.done }
+        return size > 0 ? min(1, Double(done) / Double(size)) : 0
     }
 
     private func showActivity(_ state: TransferActivityAttributes.ContentState) {

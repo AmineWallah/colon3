@@ -40,7 +40,7 @@ struct SettingsView: View {
                         EqualizerView(equalizer: player.equalizer)
                     } label: {
                         LabeledContent("Equalizer", value: player.bitPerfect ? "Bypassed"
-                                       : (player.equalizer.isEnabled ? player.equalizer.presetName : "Off"))
+                                       : (player.equalizer.isEnabled ? player.equalizer.displayName : "Off"))
                     }
                     Toggle("Bit-Perfect Mode", isOn: $player.bitPerfect)
                     if player.bitPerfect {

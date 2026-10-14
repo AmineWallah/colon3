@@ -7,10 +7,19 @@ struct EQPreset: Identifiable, Codable, Hashable {
     let gains: [Float]
 }
 
-/// 10-band graphic EQ settings. Applied to AVAudioUnitEQ by the engine backend; spatial (AVPlayer)
-/// playback bypasses it.
+/// EQ settings: a 10-band graphic EQ, or a parametric EQ (PEQ) with up to 16 freely placed
+/// bands, e.g. an AutoEQ profile for your headphones. Applied to AVAudioUnitEQ by the engine
+/// backend; spatial (AVPlayer) playback and bit-perfect mode bypass it.
 @MainActor
 final class Equalizer: ObservableObject {
+    enum Mode: String, CaseIterable, Identifiable {
+        case graphic, parametric
+        var id: String { rawValue }
+        var label: String { self == .graphic ? "Graphic" : "Parametric" }
+    }
+
+    /// Bands the audio unit is created with; graphic mode uses the first 10.
+    nonisolated static let maxBands = 16
     nonisolated static let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
     nonisolated static let gainRange: ClosedRange<Float> = -12...12
 
@@ -45,6 +54,24 @@ final class Equalizer: ObservableObject {
     @Published private(set) var presetName: String
     @Published private(set) var customPresets: [EQPreset]
 
+    @Published var mode: Mode {
+        didSet { changed() }
+    }
+    @Published var peqBands: [PEQBand] {
+        didSet {
+            if !isApplyingPreset { peqName = "Custom" }
+            changed()
+        }
+    }
+    @Published var peqPreamp: Float {
+        didSet { changed() }
+    }
+    @Published private(set) var peqName: String
+    @Published private(set) var peqProfiles: [PEQProfile]
+
+    /// What Settings shows next to "Equalizer".
+    var displayName: String { mode == .graphic ? presetName : peqName }
+
     /// Called whenever the sound should change.
     var onChange: (() -> Void)?
 
@@ -63,6 +90,60 @@ final class Equalizer: ObservableObject {
         } else {
             customPresets = []
         }
+        mode = Mode(rawValue: defaults.string(forKey: "eq.mode") ?? "") ?? .graphic
+        peqBands = defaults.data(forKey: "eq.peq").flatMap { try? JSONDecoder().decode([PEQBand].self, from: $0) } ?? []
+        peqPreamp = defaults.object(forKey: "eq.peqPreamp") as? Float ?? 0
+        peqName = defaults.string(forKey: "eq.peqName") ?? "Custom"
+        peqProfiles = defaults.data(forKey: "eq.peqProfiles").flatMap { try? JSONDecoder().decode([PEQProfile].self, from: $0) } ?? []
+    }
+
+    // MARK: Parametric
+
+    func applyPEQ(_ profile: PEQProfile) {
+        isApplyingPreset = true
+        peqBands = Array(profile.bands.prefix(Self.maxBands))
+        isApplyingPreset = false
+        peqPreamp = profile.preamp
+        peqName = profile.name
+        mode = .parametric
+        if !isEnabled { isEnabled = true }
+        changed()
+    }
+
+    func savePEQ(as name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        peqProfiles.removeAll { $0.name == trimmed }
+        peqProfiles.append(PEQProfile(name: trimmed, preamp: peqPreamp, bands: peqBands))
+        peqName = trimmed
+        persist()
+    }
+
+    func deletePEQ(_ profile: PEQProfile) {
+        peqProfiles.removeAll { $0.id == profile.id }
+        persist()
+    }
+
+    func addPEQBand() {
+        guard peqBands.count < Self.maxBands else { return }
+        // Drop the new band into the widest gap so it doesn't sit on top of another.
+        let used = peqBands.map(\.frequency).sorted()
+        let edges = [Float(20)] + used + [20_000]
+        var best: (Float, Float) = (20, 20_000)
+        for index in 1..<edges.count where log(edges[index] / edges[index - 1]) > log(best.1 / best.0) {
+            best = (edges[index - 1], edges[index])
+        }
+        let frequency = (sqrt(best.0 * best.1)).roundedTo(1)
+        peqBands.append(PEQBand(frequency: frequency))
+    }
+
+    func resetPEQ() {
+        isApplyingPreset = true
+        peqBands = []
+        isApplyingPreset = false
+        peqPreamp = 0
+        peqName = "Custom"
+        changed()
     }
 
     var allPresets: [EQPreset] { Self.builtIn + customPresets }
@@ -72,6 +153,7 @@ final class Equalizer: ObservableObject {
         gains = preset.gains
         isApplyingPreset = false
         presetName = preset.name
+        if mode != .graphic { mode = .graphic }
         let boost = max(preset.gains.max() ?? 0, 0)
         preamp = -(boost / 2).rounded()
         if !isEnabled, preset.name != "Flat" { isEnabled = true }
@@ -99,13 +181,34 @@ final class Equalizer: ObservableObject {
 
     func configure(_ unit: AVAudioUnitEQ) {
         unit.bypass = !isEnabled
-        unit.globalGain = isEnabled ? preamp : 0
-        for (index, band) in unit.bands.enumerated() where index < Self.frequencies.count {
-            band.filterType = index == 0 ? .lowShelf : (index == Self.frequencies.count - 1 ? .highShelf : .parametric)
-            band.frequency = Self.frequencies[index]
-            band.bandwidth = 1.0
-            band.gain = gains[index]
-            band.bypass = false
+        switch mode {
+        case .graphic:
+            unit.globalGain = isEnabled ? preamp : 0
+            for (index, band) in unit.bands.enumerated() {
+                guard index < Self.frequencies.count else {
+                    band.bypass = true
+                    continue
+                }
+                band.filterType = index == 0 ? .lowShelf : (index == Self.frequencies.count - 1 ? .highShelf : .parametric)
+                band.frequency = Self.frequencies[index]
+                band.bandwidth = 1.0
+                band.gain = gains[index]
+                band.bypass = false
+            }
+        case .parametric:
+            unit.globalGain = isEnabled ? min(max(peqPreamp, -96), 24) : 0
+            for (index, band) in unit.bands.enumerated() {
+                guard index < peqBands.count, peqBands[index].isOn else {
+                    band.bypass = true
+                    continue
+                }
+                let settings = peqBands[index]
+                band.filterType = settings.filter.unitType
+                band.frequency = min(max(settings.frequency, 10), 22_000)
+                band.bandwidth = settings.bandwidthOctaves
+                band.gain = settings.filter.usesGain ? min(max(settings.gain, -96), 24) : 0
+                band.bypass = false
+            }
         }
     }
 
@@ -126,6 +229,11 @@ final class Equalizer: ObservableObject {
         if let data = try? JSONEncoder().encode(customPresets) {
             defaults.set(data, forKey: "eq.custom")
         }
+        defaults.set(mode.rawValue, forKey: "eq.mode")
+        defaults.set(try? JSONEncoder().encode(peqBands), forKey: "eq.peq")
+        defaults.set(peqPreamp, forKey: "eq.peqPreamp")
+        defaults.set(peqName, forKey: "eq.peqName")
+        defaults.set(try? JSONEncoder().encode(peqProfiles), forKey: "eq.peqProfiles")
     }
 
     nonisolated static func label(for frequency: Float) -> String {
