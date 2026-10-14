@@ -473,5 +473,6 @@ final class SoulseekModel: ObservableObject {
         let stamp = Formatting.time.string(from: Date())
         logLines.append("\(stamp)  \(line)")
         if logLines.count > 500 { logLines.removeFirst(logLines.count - 500) }
+        Diagnostics.shared.log(line, category: "soulseek")
     }
 }

@@ -18,6 +18,7 @@ struct Colon3App: App {
     private let transferMonitor: TransferMonitor
 
     init() {
+        Diagnostics.shared.start()
         let library = LibraryStore()
         let player = Player(equalizer: Equalizer())
         let lastfm = LastFM()
