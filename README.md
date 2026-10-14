@@ -109,6 +109,8 @@ git switch main && git merge --ff-only beta && git push
 
 ### Releases
 
+Write the notes in `CHANGELOG.md` under `## X.Y.Z` before tagging. CI uses that section for the GitHub Release and for "What's New" in Settings › Software Update.
+
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```

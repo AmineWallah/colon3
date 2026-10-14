@@ -276,7 +276,8 @@ struct SoftwareUpdateSection: View {
                     .foregroundStyle(.secondary)
                 let notes = remote.cleanNotes
                 if !notes.isEmpty {
-                    Text(notes)
+                    Text((try? AttributedString(markdown: notes, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                         ?? AttributedString(notes))
                         .font(.footnote)
                         .lineLimit(showNotes ? nil : 3)
                         .onTapGesture { showNotes.toggle() }

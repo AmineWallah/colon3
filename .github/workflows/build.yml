@@ -211,8 +211,10 @@ jobs:
           for f in $files; do
             curl -fsSL "$BASE/$other$f" -o "site/$other$f" || rm -f "site/$other$f"
           done
-          # Read from git rather than the event payload so the message never becomes shell code.
-          notes="$(git log -1 --format=%B)"
+          # Notes: this version's CHANGELOG section, else the commit message (read from git, not
+          # the event payload, so it never becomes shell code).
+          notes="$(scripts/changelog-section.sh "${{ needs.build.outputs.version }}")"
+          if [ -z "$notes" ]; then notes="$(git log -1 --format=%B)"; fi
           python3 scripts/make-ota-site.py colon3-signed.ipa \
             --base-url "$BASE/${mine%/}" \
             --out "site/$mine" \
@@ -257,6 +259,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: colon3-unsigned
@@ -269,7 +272,10 @@ jobs:
           mv dist/colon3.ipa "$file"
           args=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
+          # Use the CHANGELOG section when there is one, otherwise GitHub's generated notes.
+          scripts/changelog-section.sh "${{ needs.build.outputs.version }}" > notes.md
+          if [ -s notes.md ]; then args+=(--notes-file notes.md); else args+=(--generate-notes); fi
           gh release create "$GITHUB_REF_NAME" "$file" \
             --repo "$GITHUB_REPOSITORY" \
             --title "colon3 ${GITHUB_REF_NAME#v}" \
-            --generate-notes "${args[@]}"
+            "${args[@]}"

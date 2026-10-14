@@ -22,6 +22,8 @@ final class UpdateChecker: ObservableObject {
             (notes ?? "")
                 .components(separatedBy: .newlines)
                 .filter { line in !["Co-Authored-By:", "Claude-Session:", "Signed-off-by:"].contains { line.hasPrefix($0) } }
+                // CHANGELOG headings ("### Transfers") read better as plain lines.
+                .map { $0.hasPrefix("#") ? String($0.drop(while: { $0 == "#" || $0 == " " })) : $0 }
                 .joined(separator: "\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
