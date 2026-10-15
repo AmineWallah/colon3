@@ -584,6 +584,7 @@ final class Player: ObservableObject {
             try chosen.load(track.url)
         } catch {
             // AVAudioFile can't open everything AVPlayer can; fall back rather than fail.
+            Diagnostics.shared.log("Playing \(track.id) with AVPlayer: \(error.localizedDescription)", category: "playback")
             chosen = avPlayer
             try? chosen.load(track.url)
         }

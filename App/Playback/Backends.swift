@@ -17,6 +17,16 @@ protocol PlaybackBackend: AnyObject {
     func stop()
 }
 
+/// A file whose format EngineBackend won't put through its graph (it plays through AVPlayer).
+struct UnsupportedFormat: LocalizedError {
+    let channels: UInt32
+    let sampleRate: Double
+    let frames: Int64
+    var errorDescription: String? {
+        "the engine can't take \(channels) ch at \(Int(sampleRate)) Hz (\(frames) frames)"
+    }
+}
+
 /// Stereo playback through AVAudioEngine so the EQ can sit in the signal path.
 ///
 /// Bit-perfect mode: the EQ is bypassed, every gain stays at unity, and before each song the
@@ -91,12 +101,12 @@ final class EngineBackend: PlaybackBackend {
 
     func load(_ url: URL) throws {
         let newFile = try AVAudioFile(forReading: url)
-        guard newFile.length > 0, Self.engineCanPlay(newFile.processingFormat) else {
-            throw CocoaError(.fileReadCorruptFile)
+        let format = newFile.processingFormat
+        guard newFile.length > 0, Self.engineCanPlay(format) else {
+            throw UnsupportedFormat(channels: format.channelCount, sampleRate: format.sampleRate, frames: newFile.length)
         }
         stopNode()
         file = newFile
-        let format = newFile.processingFormat
         if bitPerfect { matchHardwareRate(format.sampleRate) }
         if connectedFormat?.sampleRate != format.sampleRate || connectedFormat?.channelCount != format.channelCount {
             connect(format)
