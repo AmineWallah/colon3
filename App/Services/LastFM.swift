@@ -213,6 +213,19 @@ extension LastFM {
         }
     }
 
+    /// An artist's most played songs on Last.fm, most played first.
+    static func topTracks(artist: String, apiKey: String) async throws -> [LastFMSimilarTrack] {
+        let json = try await publicCall(method: "artist.getTopTracks",
+                                        parameters: ["artist": artist, "limit": "15", "autocorrect": "1"],
+                                        apiKey: apiKey)
+        let container = json["toptracks"] as? [String: Any]
+        return list(container?["track"]).compactMap { entry -> LastFMSimilarTrack? in
+            guard let title = entry["name"] as? String,
+                  let name = (entry["artist"] as? [String: Any])?["name"] as? String else { return nil }
+            return LastFMSimilarTrack(title: title, artist: name, match: 1)
+        }
+    }
+
     /// Unsigned read-only GET.
     private static func publicCall(method: String, parameters: [String: String], apiKey: String) async throws -> [String: Any] {
         var components = URLComponents(string: "https://ws.audioscrobbler.com/2.0/")!

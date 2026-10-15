@@ -101,6 +101,28 @@ enum TrackMatcher {
         return String(scalars)
     }
 
+    /// A title as Last.fm most likely knows it: no "(2011 Remaster)", "[Live]", "feat. X" or
+    /// " - Radio Edit", and no leading track number. Case and spelling are kept.
+    static func lookupTitle(_ title: String) -> String {
+        var text = title
+        for pattern in [#"^\s*\d{1,3}\s*[-.]\s+"#, #"\s*\([^)]*\)"#, #"\s*\[[^\]]*\]"#,
+                        #"\s+(feat|ft|featuring)\.?\s.*$"#,
+                        #"\s+-\s+.*\b(remaster|remastered|version|edit|mix|mono|stereo|live|recorded|single|radio|bonus|deluxe|explicit)\b.*$"#] {
+            text = text.replacingOccurrences(of: pattern, with: "", options: [.regularExpression, .caseInsensitive])
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? title : trimmed
+    }
+
+    /// The first artist of a credit: "A feat. B", "A, B", "A x B" → "A". "&" and "and" stay,
+    /// since they're usually part of a band's name.
+    static func lookupArtist(_ credit: String) -> String {
+        let cut = credit.replacingOccurrences(of: #"(\s*[,;/]\s*|\s+(feat\.?|ft\.?|featuring|with|x|vs\.?)\s+).*$"#,
+                                              with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespaces)
+        return cut.isEmpty ? credit : cut
+    }
+
     /// Identifies a song across sources: "title|artist", normalised.
     static func songKey(_ song: WantedSong) -> String {
         normalizeTitle(song.title) + "|" + normalizeName(song.primaryArtist)

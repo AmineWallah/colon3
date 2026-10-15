@@ -378,8 +378,8 @@ final class Player: ObservableObject {
                     excludedSongs: self.discoveryExclusions(), maxDiscoveries: maxDiscoveries)
                 guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
             }
-            if discovery.allowed, self.recommender.lastSimilarCount == 0 {
-                self.autoplayNote = "Last.fm has no similar songs for this one, so these are from your library."
+            if discovery.allowed, let note = self.recommender.lastFMNote {
+                self.autoplayNote = note
             }
             let present = Set(self.autoplayUpcoming.map(\.id))
             self.autoplayTask = nil

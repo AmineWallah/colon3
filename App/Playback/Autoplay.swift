@@ -63,11 +63,17 @@ final class AutoplayRecommender {
     private var indexRevision = -1
     private var trackCache: [String: [LastFMSimilarTrack]] = [:]
     private var artistCache: [String: [LastFMSimilarArtist]] = [:]
+    private var topTracksCache: [String: [LastFMSimilarTrack]] = [:]
+    /// The last Last.fm error, for the note under Up Next.
+    private var lastError: String?
 
     private static let perArtistLimit = 3
+    /// Similar artists whose top tracks are fetched per batch, to find songs to download.
+    private static let topTrackLookups = 4
 
-    /// How many similar tracks Last.fm returned for the last request (nil: not asked).
-    private(set) var lastSimilarCount: Int?
+    /// Set when Last.fm had nothing for the last seed (neither similar songs nor artists):
+    /// why, in a sentence for Up Next. Nil when Last.fm wasn't asked or helped.
+    private(set) var lastFMNote: String?
 
     /// - Parameters:
     ///   - excludedTracks: library track ids not to pick (queued, lined up, recently played).
@@ -94,52 +100,81 @@ final class AutoplayRecommender {
             return true
         }
 
-        func discover(_ song: WantedSong) {
+        @discardableResult
+        func discover(_ song: WantedSong) -> Bool {
             let key = TrackMatcher.songKey(song)
             let artist = TrackMatcher.normalizeName(song.primaryArtist)
             guard picked.count < count, discoveries < maxDiscoveries, !usedSongs.contains(key),
-                  perArtist[artist, default: 0] < AutoplayRecommender.perArtistLimit else { return }
+                  perArtist[artist, default: 0] < AutoplayRecommender.perArtistLimit else { return false }
             perArtist[artist, default: 0] += 1
             usedSongs.insert(key)
             discoveries += 1
             picked.append(.discovery(song))
+            return true
         }
 
-        lastSimilarCount = nil
+        /// While songs to download can still be found, library songs leave room for them, so
+        /// a library full of similar artists doesn't crowd them out. Later steps fill any gap.
+        func libraryHasRoom() -> Bool {
+            picked.count < count - (maxDiscoveries - discoveries)
+        }
+
+        lastFMNote = nil
         if let apiKey = LastFM.publicAPIKey {
-            // A little randomness so the same seed doesn't always give the same order.
+            lastError = nil
+            // 1. Songs Last.fm calls similar. A little randomness so the same seed doesn't
+            // always give the same order.
             let similar = await similarTracks(to: seed, apiKey: apiKey)
                 .map { ($0, $0.match * Double.random(in: 0.7...1)) }
                 .sorted { $0.1 > $1.1 }
                 .map { $0.0 }
-            lastSimilarCount = similar.count
             refreshIndex(library)
             // No length: Last.fm's track.getSimilar doesn't document one, and a wrong unit would
             // reject every file. Title, artist and version checks still apply.
             for song in similar where picked.count < count {
                 let wanted = WantedSong(title: song.title, artists: [song.artist])
                 if let track = index.match(wanted) {
-                    if !take(track) { usedSongs.insert(TrackMatcher.songKey(wanted)) }
+                    // In the library either way: never download it again.
+                    if !libraryHasRoom() || !take(track) { usedSongs.insert(TrackMatcher.songKey(wanted)) }
                 } else {
                     discover(wanted)
                 }
             }
-            Diagnostics.shared.log("Autoplay: Last.fm has \(similar.count) similar to \(seed.artist) – \(seed.title); "
-                                   + "picked \(picked.count - discoveries) from the library, \(discoveries) to download "
-                                   + "(limit \(maxDiscoveries))", category: "autoplay")
+            let fromSimilarSongs = picked.count
 
+            // 2. Similar artists: their songs in the library, and (for songs to download, since
+            // track.getSimilar is often empty) a top track of theirs you don't have.
+            var artists: [LastFMSimilarArtist] = []
             if picked.count < count {
-                let artists = await similarArtists(to: seed.artist, apiKey: apiKey)
+                artists = await similarArtists(to: seed.artist, apiKey: apiKey)
                     .map { ($0, $0.match * Double.random(in: 0.6...1)) }
                     .sorted { $0.1 > $1.1 }
                     .map { $0.0 }
                 refreshIndex(library)
+                var lookups = 0
                 for artist in artists where picked.count < count {
                     var fromThisArtist = 0
-                    for track in index.tracks(byArtist: artist.name).shuffled() where fromThisArtist < 2 {
+                    for track in index.tracks(byArtist: artist.name).shuffled() where fromThisArtist < 2 && libraryHasRoom() {
                         if take(track) { fromThisArtist += 1 }
                     }
+                    guard discoveries < maxDiscoveries, lookups < Self.topTrackLookups, picked.count < count else { continue }
+                    lookups += 1
+                    let top = await topTracks(of: artist.name, apiKey: apiKey)
+                    refreshIndex(library)
+                    for song in top.prefix(10).shuffled() {
+                        let wanted = WantedSong(title: song.title, artists: [song.artist])
+                        if index.match(wanted) == nil, discover(wanted) { break }
+                    }
                 }
+            }
+
+            Diagnostics.shared.log("Autoplay: Last.fm has \(similar.count) similar songs and \(artists.count) similar artists "
+                                   + "for \(seed.artist) – \(seed.title); picked \(fromSimilarSongs) from similar songs, "
+                                   + "\(picked.count) in all, \(discoveries) to download (limit \(maxDiscoveries))",
+                                   category: "autoplay")
+            if similar.isEmpty, artists.isEmpty {
+                lastFMNote = lastError.map { "Last.fm: \($0). Playing from your library." }
+                    ?? "Last.fm has nothing similar to this song or artist, so these are from your library."
             }
         }
 
@@ -175,30 +210,72 @@ final class AutoplayRecommender {
         indexRevision = library.scanRevision
     }
 
+    /// track.getSimilar with the cleaned-up title, first under the full artist credit (bands
+    /// like "Earth, Wind & Fire" have commas), then under its first name ("A feat. B" → "A"),
+    /// then with the tags exactly as they are. Stops at the first form Last.fm knows.
     private func similarTracks(to seed: AutoplaySeed, apiKey: String) async -> [LastFMSimilarTrack] {
-        let key = TrackMatcher.normalizeName(seed.artist) + "|" + TrackMatcher.normalizeTitle(seed.title)
-        if let cached = trackCache[key] { return cached }
-        do {
-            let result = try await LastFM.similarTracks(artist: seed.artist, track: seed.title, apiKey: apiKey)
-            if trackCache.count > 300 { trackCache.removeAll() }
-            trackCache[key] = result
-            return result
-        } catch {
-            Diagnostics.shared.log("Autoplay: Last.fm similar tracks failed: \(error.localizedDescription)", category: "autoplay")
-            return []
+        let title = TrackMatcher.lookupTitle(seed.title)
+        var forms: [(String, String)] = [(seed.artist, title)]
+        for form in [(TrackMatcher.lookupArtist(seed.artist), title), (seed.artist, seed.title)]
+            where !forms.contains(where: { $0 == form }) {
+            forms.append(form)
         }
+        for (artist, title) in forms {
+            let key = TrackMatcher.normalizeName(artist) + "|" + TrackMatcher.normalizeTitle(title)
+            let result: [LastFMSimilarTrack]
+            if let cached = trackCache[key] {
+                result = cached
+            } else {
+                do {
+                    result = try await LastFM.similarTracks(artist: artist, track: title, apiKey: apiKey)
+                } catch {
+                    lastError = error.localizedDescription
+                    Diagnostics.shared.log("Autoplay: track.getSimilar \(artist) – \(title) failed: \(error.localizedDescription)", category: "autoplay")
+                    result = []
+                }
+                if trackCache.count > 300 { trackCache.removeAll() }
+                trackCache[key] = result
+            }
+            if !result.isEmpty { return result }
+        }
+        return []
     }
 
-    private func similarArtists(to artist: String, apiKey: String) async -> [LastFMSimilarArtist] {
+    /// artist.getSimilar for the full credit, then its first name.
+    private func similarArtists(to credit: String, apiKey: String) async -> [LastFMSimilarArtist] {
+        var names = [credit]
+        if TrackMatcher.lookupArtist(credit) != credit { names.append(TrackMatcher.lookupArtist(credit)) }
+        for name in names {
+            let key = TrackMatcher.normalizeName(name)
+            let result: [LastFMSimilarArtist]
+            if let cached = artistCache[key] {
+                result = cached
+            } else {
+                do {
+                    result = try await LastFM.similarArtists(artist: name, apiKey: apiKey)
+                } catch {
+                    lastError = error.localizedDescription
+                    Diagnostics.shared.log("Autoplay: artist.getSimilar \(name) failed: \(error.localizedDescription)", category: "autoplay")
+                    result = []
+                }
+                if artistCache.count > 300 { artistCache.removeAll() }
+                artistCache[key] = result
+            }
+            if !result.isEmpty { return result }
+        }
+        return []
+    }
+
+    private func topTracks(of artist: String, apiKey: String) async -> [LastFMSimilarTrack] {
         let key = TrackMatcher.normalizeName(artist)
-        if let cached = artistCache[key] { return cached }
+        if let cached = topTracksCache[key] { return cached }
         do {
-            let result = try await LastFM.similarArtists(artist: artist, apiKey: apiKey)
-            if artistCache.count > 300 { artistCache.removeAll() }
-            artistCache[key] = result
+            let result = try await LastFM.topTracks(artist: artist, apiKey: apiKey)
+            if topTracksCache.count > 300 { topTracksCache.removeAll() }
+            topTracksCache[key] = result
             return result
         } catch {
-            Diagnostics.shared.log("Autoplay: Last.fm similar artists failed: \(error.localizedDescription)", category: "autoplay")
+            Diagnostics.shared.log("Autoplay: artist.getTopTracks \(artist) failed: \(error.localizedDescription)", category: "autoplay")
             return []
         }
     }
