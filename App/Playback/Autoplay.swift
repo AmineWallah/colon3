@@ -5,6 +5,10 @@ import Foundation
 struct AutoplayItem: Identifiable, Equatable {
     enum State: Equatable {
         case ready(Track)
+        /// A suggestion you don't have; downloads only once you confirm it (or with automatic
+        /// downloads on).
+        case offered
+        /// Confirmed, waiting for a download slot.
         case waiting
         case searching
         case downloading(Double)
@@ -26,7 +30,7 @@ struct AutoplayItem: Identifiable, Equatable {
     }
 
     static func discovery(_ song: WantedSong) -> AutoplayItem {
-        AutoplayItem(id: "d:" + TrackMatcher.songKey(song), song: song, isDiscovery: true, state: .waiting)
+        AutoplayItem(id: "d:" + TrackMatcher.songKey(song), song: song, isDiscovery: true, state: .offered)
     }
 }
 

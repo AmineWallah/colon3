@@ -108,8 +108,13 @@ final class EngineBackend: PlaybackBackend {
         stopNode()
         file = newFile
         if bitPerfect { matchHardwareRate(format.sampleRate) }
-        if connectedFormat?.sampleRate != format.sampleRate || connectedFormat?.channelCount != format.channelCount {
+        if connectedFormat == nil {
             connect(format)
+        } else if connectedFormat?.sampleRate != format.sampleRate || connectedFormat?.channelCount != format.channelCount {
+            // Re-linking a graph that's already wired at another rate makes AVAudioEngine raise
+            // (the time-pitch unit's input and output rates would disagree mid-way), which kills
+            // the app. A fresh engine wired for the new format avoids that.
+            rebuildEngine()
         }
         lastTime = 0
         schedule(fromFrame: 0)
@@ -170,10 +175,12 @@ final class EngineBackend: PlaybackBackend {
         }
     }
 
+    /// Wires player → time-pitch → EQ → mixer on an engine with nothing connected yet. Linked
+    /// from the mixer backwards, so every link's far end already runs at `format`.
     private func connect(_ format: AVAudioFormat) {
-        engine.connect(node, to: timePitch, format: format)
-        engine.connect(timePitch, to: eq, format: format)
         engine.connect(eq, to: engine.mainMixerNode, format: format)
+        engine.connect(timePitch, to: eq, format: format)
+        engine.connect(node, to: timePitch, format: format)
         connectedFormat = format
     }
 

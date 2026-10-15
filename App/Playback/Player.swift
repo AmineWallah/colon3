@@ -52,6 +52,19 @@ final class Player: ObservableObject {
             }
         }
     }
+    /// Download suggestions you don't have without asking. Off: each waits for a tap. Saved in Settings.
+    @Published var autoplayAutoDownload: Bool {
+        didSet {
+            UserDefaults.standard.set(autoplayAutoDownload, forKey: AppSettings.autoplayAutoDownloadKey)
+            if autoplayAutoDownload, !oldValue {
+                setAutoplayUpcoming(autoplayUpcoming.map { item -> AutoplayItem in
+                    var item = item
+                    if item.state == .offered { item.state = .waiting }
+                    return item
+                })
+            }
+        }
+    }
     /// What autoplay will play after the queue, shown under Up Next. Not part of `queue` until
     /// each song's turn comes, so editing the queue never mixes the two up.
     @Published private(set) var autoplayUpcoming: [AutoplayItem] = []
@@ -144,6 +157,7 @@ final class Player: ObservableObject {
         playbackRate = min(max(savedRate, Self.rateRange.lowerBound), Self.rateRange.upperBound)
         autoplay = AppSettings.flag(AppSettings.autoplayKey)
         autoplayLibraryOnly = UserDefaults.standard.bool(forKey: AppSettings.autoplayLibraryOnlyKey)
+        autoplayAutoDownload = UserDefaults.standard.bool(forKey: AppSettings.autoplayAutoDownloadKey)
         recentlyPlayed = UserDefaults.standard.stringArray(forKey: "autoplay.recent") ?? []
         engine.bitPerfect = bitPerfect
         engine.rate = playbackRate
@@ -291,7 +305,9 @@ final class Player: ObservableObject {
         var items = autoplayUpcoming
         items.remove(at: offset)
         if upNext.isEmpty {
-            let skipped = Set(items.prefix(offset).filter { $0.track != nil }.map(\.id))
+            // Songs passed over leave the list: ready ones and suggestions nobody asked to download.
+            // Confirmed downloads still on their way stay and play once they're ready.
+            let skipped = Set(items.prefix(offset).filter { $0.track != nil || $0.state == .offered }.map(\.id))
             items.removeAll { skipped.contains($0.id) }
             queue.append(track)
             unshuffledQueue.append(track)
@@ -309,6 +325,16 @@ final class Player: ObservableObject {
         }
         setAutoplayUpcoming(items)
         loadCurrent(autoplay: true)
+    }
+
+    /// You confirmed downloading a suggestion: it's searched and downloaded (two at a time, in
+    /// list order). If it isn't ready when its turn comes, the next ready song plays first.
+    func confirmAutoplayDownload(_ id: String) {
+        guard let position = autoplayUpcoming.firstIndex(where: { $0.id == id }),
+              autoplayUpcoming[position].state == .offered else { return }
+        var items = autoplayUpcoming
+        items[position].state = .waiting
+        setAutoplayUpcoming(items)
     }
 
     func removeAutoplay(at offsets: IndexSet) {
@@ -382,9 +408,14 @@ final class Player: ObservableObject {
                 self.autoplayNote = note
             }
             let present = Set(self.autoplayUpcoming.map(\.id))
+            let fresh = picks.filter { !present.contains($0.id) }.map { item -> AutoplayItem in
+                var item = item
+                if self.autoplayAutoDownload, item.state == .offered { item.state = .waiting }
+                return item
+            }
             self.autoplayTask = nil
             self.isFindingAutoplay = false
-            self.setAutoplayUpcoming(self.autoplayUpcoming + picks.filter { !present.contains($0.id) })
+            self.setAutoplayUpcoming(self.autoplayUpcoming + fresh)
             self.advanceIfWaiting()
         }
     }
@@ -394,7 +425,7 @@ final class Player: ObservableObject {
         guard let fetcher else { return }
         var inFlight = discoveryTasks.count
         for item in autoplayUpcoming where inFlight < Self.discoveriesAhead
-            && item.isDiscovery && item.track == nil && discoveryTasks[item.id] == nil {
+            && item.isDiscovery && item.state == .waiting && discoveryTasks[item.id] == nil {
             inFlight += 1
             let id = item.id
             let song = item.song
@@ -527,6 +558,11 @@ final class Player: ObservableObject {
             if let ready = autoplayUpcoming.firstIndex(where: { $0.track != nil }) {
                 playAutoplay(at: ready)
             } else {
+                // Nothing ready. Unconfirmed suggestions never will be, so unless a confirmed
+                // download is on its way, clear them and let a fresh batch bring playable songs.
+                if !autoplayUpcoming.contains(where: { $0.isDiscovery && $0.state != .offered }) {
+                    setAutoplayUpcoming(autoplayUpcoming.filter { $0.state != .offered })
+                }
                 pause()
                 seek(to: 0)
                 advanceWhenAutoplayReady = true

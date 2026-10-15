@@ -99,6 +99,8 @@ enum AppSettings {
     static let autoplayKey = "autoplay"
     /// Defaults to off: autoplay may download songs it finds through Last.fm.
     static let autoplayLibraryOnlyKey = "autoplayLibraryOnly"
+    /// Defaults to off: autoplay suggestions you don't have wait for you to tap Download.
+    static let autoplayAutoDownloadKey = "autoplayAutoDownload"
     /// These three default to off.
     static let bitPerfectKey = "bitPerfect"
     static let seedingKey = "seedingMode"

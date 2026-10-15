@@ -409,6 +409,8 @@ struct AirPlayButton: UIViewRepresentable {
 struct QueueView: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var library: LibraryStore
+    /// The suggestion whose Download button was tapped, waiting for confirmation.
+    @State private var confirming: AutoplayItem?
 
     private var showsAutoplay: Bool { player.autoplay && player.repeatMode == .off }
 
@@ -463,17 +465,18 @@ struct QueueView: View {
                     if showsAutoplay, !player.autoplayUpcoming.isEmpty {
                         Section {
                             ForEach(Array(player.autoplayUpcoming.enumerated()), id: \.element.id) { offset, item in
-                                Button {
-                                    player.playAutoplay(at: offset)
-                                } label: {
+                                Group {
                                     if let track = item.track {
-                                        row(track, badge: item.isDiscovery ? "arrow.down.circle.fill" : nil).opacity(0.75)
+                                        Button {
+                                            player.playAutoplay(at: offset)
+                                        } label: {
+                                            row(track, badge: item.isDiscovery ? "arrow.down.circle.fill" : nil).opacity(0.75)
+                                        }
+                                        .buttonStyle(.plain)
                                     } else {
-                                        discoveryRow(item).opacity(0.6)
+                                        discoveryRow(item)
                                     }
                                 }
-                                .buttonStyle(.plain)
-                                .disabled(item.track == nil)
                                 .listRowBackground(Color.clear)
                                 .listRowSeparatorTint(.white.opacity(0.15))
                                 .listRowInsets(EdgeInsets(top: 6, leading: 28, bottom: 6, trailing: 20))
@@ -501,6 +504,14 @@ struct QueueView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .environment(\.editMode, .constant(.active))
+                .confirmationDialog(confirming.map { "Download \u{201C}\($0.song.title)\u{201D}?" } ?? "",
+                                    isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                                    titleVisibility: .visible, presenting: confirming) { item in
+                    Button("Download") { player.confirmAutoplayDownload(item.id) }
+                    Button("Cancel", role: .cancel) {}
+                } message: { item in
+                    Text("\(item.song.primaryArtist): found on Soulseek and saved to your library and the \u{201C}Found by Autoplay\u{201D} playlist. If it isn't ready when its turn comes, the next song plays and this one follows once it's done.")
+                }
                 .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.92),
                                              .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
             }
@@ -537,17 +548,37 @@ struct QueueView: View {
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
             }
+            .opacity(0.6)
             Spacer()
-            Image(systemName: "icloud.and.arrow.down")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.6))
+            switch item.state {
+            case .offered:
+                Button {
+                    confirming = item
+                } label: {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.title2)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Download \(item.song.title)")
+            case .waiting, .searching, .downloading:
+                // The percentage is in the line under the title.
+                ProgressView()
+                    .tint(.white)
+                    .frame(width: 44, height: 44)
+            case .ready:
+                EmptyView()
+            }
         }
     }
 
     private func discoveryStatus(_ state: AutoplayItem.State) -> String {
         switch state {
         case .ready: return "Ready"
-        case .waiting: return "Will download"
+        case .offered: return "Not downloaded"
+        case .waiting: return "Waiting to download"
         case .searching: return "Searching Soulseek…"
         case let .downloading(fraction): return "Downloading \(Int(fraction * 100))%"
         }
