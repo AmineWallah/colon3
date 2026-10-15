@@ -3,7 +3,7 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
-## 0.5.0
+## 1.0.0
 
 ### New
 - **Autoplay:** when the queue runs out, the music keeps going with songs similar to what you played, picked through Last.fm (needs a Last.fm API key). Songs in your library play straight away. Songs you don't have show under Up Next with a Download button: confirm it and colon3 finds the song on Soulseek, saves it to a "Found by Autoplay" playlist, and plays it once it's ready. Without Last.fm it plays more by the same artist, your most played, or anything else. Recently played songs are skipped. On by default; turn it off in Settings › Playback or with the ∞ button in the queue. **Only from Library** never suggests downloads, and **Download Suggestions Automatically** skips the button.

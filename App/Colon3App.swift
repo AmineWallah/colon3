@@ -21,7 +21,7 @@ struct Colon3App: App {
 
     init() {
         Diagnostics.shared.start()
-        // Discord presence was removed in 0.5.0: forget any token an earlier build saved.
+        // Discord presence was removed in 1.0.0: forget any token an earlier build saved.
         Keychain.delete(account: "token", service: "colon3.discord")
         for key in ["discordPresence", "discord.applicationID", "discord.status"] {
             UserDefaults.standard.removeObject(forKey: key)
