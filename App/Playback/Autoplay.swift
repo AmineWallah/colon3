@@ -66,6 +66,9 @@ final class AutoplayRecommender {
 
     private static let perArtistLimit = 3
 
+    /// How many similar tracks Last.fm returned for the last request (nil: not asked).
+    private(set) var lastSimilarCount: Int?
+
     /// - Parameters:
     ///   - excludedTracks: library track ids not to pick (queued, lined up, recently played).
     ///   - excludedSongs: `TrackMatcher.songKey`s not to discover (lined up, failed before).
@@ -102,21 +105,28 @@ final class AutoplayRecommender {
             picked.append(.discovery(song))
         }
 
+        lastSimilarCount = nil
         if let apiKey = LastFM.publicAPIKey {
             // A little randomness so the same seed doesn't always give the same order.
             let similar = await similarTracks(to: seed, apiKey: apiKey)
                 .map { ($0, $0.match * Double.random(in: 0.7...1)) }
                 .sorted { $0.1 > $1.1 }
                 .map { $0.0 }
+            lastSimilarCount = similar.count
             refreshIndex(library)
+            // No length: Last.fm's track.getSimilar doesn't document one, and a wrong unit would
+            // reject every file. Title, artist and version checks still apply.
             for song in similar where picked.count < count {
-                let wanted = WantedSong(title: song.title, artists: [song.artist], duration: song.duration)
+                let wanted = WantedSong(title: song.title, artists: [song.artist])
                 if let track = index.match(wanted) {
                     if !take(track) { usedSongs.insert(TrackMatcher.songKey(wanted)) }
                 } else {
                     discover(wanted)
                 }
             }
+            Diagnostics.shared.log("Autoplay: Last.fm has \(similar.count) similar to \(seed.artist) – \(seed.title); "
+                                   + "picked \(picked.count - discoveries) from the library, \(discoveries) to download "
+                                   + "(limit \(maxDiscoveries))", category: "autoplay")
 
             if picked.count < count {
                 let artists = await similarArtists(to: seed.artist, apiKey: apiKey)

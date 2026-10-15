@@ -436,6 +436,8 @@ struct QueueView: View {
                             ProgressView().tint(.white)
                             Text("Finding songs for Autoplay…")
                         }
+                    } else if showsAutoplay, let note = player.autoplayNote {
+                        Text(note).multilineTextAlignment(.center).padding(.horizontal, 28)
                     } else {
                         Text("Nothing else queued.")
                     }
@@ -478,13 +480,18 @@ struct QueueView: View {
                             }
                             .onDelete { player.removeAutoplay(at: $0) }
                         } header: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "infinity")
-                                Text("Autoplay")
-                                Spacer()
-                                if player.isFindingAutoplay { ProgressView().controlSize(.small).tint(.white) }
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "infinity")
+                                    Text("Autoplay")
+                                    Spacer()
+                                    if player.isFindingAutoplay { ProgressView().controlSize(.small).tint(.white) }
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                if let note = player.autoplayNote {
+                                    Text(note).font(.caption)
+                                }
                             }
-                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.7))
                             .textCase(nil)
                             .padding(.leading, 12)

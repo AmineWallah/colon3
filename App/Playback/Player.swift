@@ -56,6 +56,8 @@ final class Player: ObservableObject {
     /// each song's turn comes, so editing the queue never mixes the two up.
     @Published private(set) var autoplayUpcoming: [AutoplayItem] = []
     @Published private(set) var isFindingAutoplay = false
+    /// Why autoplay isn't finding songs outside the library right now (shown under Up Next).
+    @Published private(set) var autoplayNote: String?
     /// Bit-perfect mode for USB DACs (see EngineBackend). Saved in Settings.
     @Published var bitPerfect: Bool {
         didSet {
@@ -122,6 +124,9 @@ final class Player: ObservableObject {
     private var failedDiscoveries = Set<String>()
     /// Discoveries fetched at once, in list order. Keeps downloads close to what plays next.
     private static let discoveriesAhead = 2
+    /// Whether the current list was made while discoveries were possible. A list made before
+    /// Soulseek connected (or before a Last.fm key was added) is rebuilt once they are.
+    private var autoplayListAllowsDiscovery = false
 
     // Scrobbling: count real listening time, not position, so seeking doesn't cheat.
     private var listened: Double = 0
@@ -335,10 +340,15 @@ final class Player: ObservableObject {
             advanceWhenAutoplayReady = false
             setAutoplayUpcoming([])
             if isFindingAutoplay { isFindingAutoplay = false }
+            if autoplayNote != nil { autoplayNote = nil }
             return
         }
         if last.id != autoplaySeedID {
             autoplaySeedID = last.id
+            setAutoplayUpcoming([])
+            fetchAutoplay(after: AutoplaySeed(last))
+        } else if !autoplayListAllowsDiscovery, autoplayTask == nil, discoveryCheck().allowed,
+                  !autoplayUpcoming.contains(where: \.isDiscovery) {
             setAutoplayUpcoming([])
             fetchAutoplay(after: AutoplaySeed(last))
         } else if autoplayUpcoming.count < 4, autoplayTask == nil {
@@ -350,9 +360,10 @@ final class Player: ObservableObject {
         autoplayTask?.cancel()
         let seedID = autoplaySeedID
         let wanted = max(10 - autoplayUpcoming.count, 1)
-        // Discoveries need Last.fm (the recommender only discovers from its picks) and Soulseek.
-        let canDiscover = !autoplayLibraryOnly && (fetcher?.isAvailable ?? false)
-        let maxDiscoveries = canDiscover ? (wanted + 1) / 2 : 0
+        let discovery = discoveryCheck()
+        if autoplayUpcoming.isEmpty { autoplayListAllowsDiscovery = discovery.allowed }
+        let maxDiscoveries = discovery.allowed ? (wanted + 1) / 2 : 0
+        autoplayNote = discovery.note
         isFindingAutoplay = true
         autoplayTask = Task { [weak self] in
             guard let self else { return }
@@ -366,6 +377,9 @@ final class Player: ObservableObject {
                     after: seed, count: wanted, excludedTracks: self.autoplayExclusions(strict: false),
                     excludedSongs: self.discoveryExclusions(), maxDiscoveries: maxDiscoveries)
                 guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
+            }
+            if discovery.allowed, self.recommender.lastSimilarCount == 0 {
+                self.autoplayNote = "Last.fm has no similar songs for this one, so these are from your library."
             }
             let present = Set(self.autoplayUpcoming.map(\.id))
             self.autoplayTask = nil
@@ -449,6 +463,18 @@ final class Player: ObservableObject {
             ids.formUnion(queue.suffix(3).map(\.id))
         }
         return ids
+    }
+
+    /// Whether autoplay may download songs, and if not (and the user didn't choose that), why.
+    private func discoveryCheck() -> (allowed: Bool, note: String?) {
+        if autoplayLibraryOnly { return (false, nil) }
+        if LastFM.publicAPIKey == nil {
+            return (false, "Connect Last.fm in Settings to also get songs you don't have.")
+        }
+        guard let fetcher, fetcher.isAvailable else {
+            return (false, "Log in to Soulseek to also get songs you don't have.")
+        }
+        return (true, nil)
     }
 
     /// Songs not to discover: already lined up, or not on Soulseek earlier.

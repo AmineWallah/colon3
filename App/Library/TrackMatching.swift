@@ -199,8 +199,12 @@ enum TrackMatcher {
         }
 
         let losslessExtensions: Set<String> = ["flac", "wav", "aif", "aiff", "alac"]
+        if let rate = file.attributes.sampleRate, rate > 192_000 {
+            return nil  // DXD-style rips: huge, and past what the player's EQ path takes.
+        }
         if losslessExtensions.contains(file.fileExtension) || file.attributes.bitDepth != nil {
-            score += 30
+            // Hi-res plays fine but costs 3–6× the download; CD quality is preferred.
+            score += (file.attributes.sampleRate ?? 44_100) > 96_000 ? 22 : 30
         } else if let bitrate = file.attributes.bitrate {
             switch bitrate {
             case 310...: score += 24

@@ -82,8 +82,18 @@ final class EngineBackend: PlaybackBackend {
         return lastTime
     }
 
+    /// Formats the engine graph (time-pitch, EQ) is known to take. AVAudioEngine reports a bad
+    /// format by raising an Objective-C exception, which Swift can't catch and which kills the
+    /// app, so anything else is refused here and the player falls back to AVPlayer.
+    private static func engineCanPlay(_ format: AVAudioFormat) -> Bool {
+        (1...2).contains(format.channelCount) && (8_000...192_000).contains(format.sampleRate)
+    }
+
     func load(_ url: URL) throws {
         let newFile = try AVAudioFile(forReading: url)
+        guard newFile.length > 0, Self.engineCanPlay(newFile.processingFormat) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
         stopNode()
         file = newFile
         let format = newFile.processingFormat
