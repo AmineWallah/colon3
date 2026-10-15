@@ -259,12 +259,21 @@ struct SpotifyAccountSection: View {
                     UIPasteboard.general.string = SpotifyService.redirectURI
                     copied = true
                 } label: {
-                    LabeledContent("Redirect URI") {
-                        Label(copied ? "Copied" : SpotifyService.redirectURI,
-                              systemImage: copied ? "checkmark" : "doc.on.doc")
+                    // A plain one-line row: LabeledContent inside a Button label made Form give
+                    // this row a huge height.
+                    HStack(spacing: 8) {
+                        Text("Redirect URI").foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text(copied ? "Copied" : SpotifyService.redirectURI)
                             .font(.footnote.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .foregroundStyle(.tint)
                     }
                 }
+                .accessibilityLabel("Copy redirect URI")
                 Button {
                     logIn()
                 } label: {

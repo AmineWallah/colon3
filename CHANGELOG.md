@@ -5,14 +5,17 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 ## 0.5.0
 
-- **Autoplay:** when the queue runs out, colon3 keeps the music going. With a Last.fm API key saved, it picks songs and artists Last.fm calls similar. Ones in your library play straight away; ones you don't have show under Up Next with a Download button. Confirm it and the song is found on Soulseek, downloaded into a "Found by Autoplay" playlist, and played once it's ready (if it isn't ready when its turn comes, the next song plays first). **Download Suggestions Automatically** skips the button. Without Last.fm (or when it has nothing) it plays more by the same artist, then your most played, then anything. Recently played songs are skipped. Upcoming autoplay songs show under Up Next with their download progress; tap or swipe them away. On by default; turn it off in Settings › Playback or with the ∞ button in the queue, or turn on **Only from Library** to never download.
-- **Import from Spotify:** log in with your own Spotify developer app (Client ID only, no secret), pick one of your playlists or Liked Songs, and colon3 builds a playlist from it in the same order. Songs already in your library are added straight away; the rest are searched on Soulseek one at a time, and the best match is downloaded: right title, artist and length, lossless or high bitrate and a free slot preferred, and no live, remix or karaoke versions unless the original is one. If a download fails or stalls, the next-best file is tried. Each song shows its progress, with Cancel and Retry Not Found. Spotify only lets developer apps read playlists you own or collaborate on.
+### New
+- **Autoplay:** when the queue runs out, the music keeps going with songs similar to what you played, picked through Last.fm (needs a Last.fm API key). Songs in your library play straight away. Songs you don't have show under Up Next with a Download button: confirm it and colon3 finds the song on Soulseek, saves it to a "Found by Autoplay" playlist, and plays it once it's ready. Without Last.fm it plays more by the same artist, your most played, or anything else. Recently played songs are skipped. On by default; turn it off in Settings › Playback or with the ∞ button in the queue. **Only from Library** never suggests downloads, and **Download Suggestions Automatically** skips the button.
+- **Import from Spotify:** log in with your own Spotify developer app, pick one of your playlists or Liked Songs, and colon3 rebuilds it as a playlist in the same order. Songs you already have are added right away; the rest are found on Soulseek and downloaded (right title, artist and length; lossless, high bitrate and free slots preferred; no live, remix or karaoke versions unless the original is one). Each song shows its progress, with Cancel and Retry Not Found.
 - **Import from Apple Music:** the same for playlists in the Music app on your iPhone.
-- Importing the same playlist again updates the playlist it made last time. Imports keep going if you close the import screen, and searches don't touch the Search tab. Imports and autoplay share one search queue (one search every 10 seconds at most), with autoplay going first.
-- **Fixed:** a crash when the next song had a different sample rate from the one before (for example a 44.1 kHz song followed by a 48 or 96 kHz FLAC).
-- **Playback speed:** a speed button in Now Playing opens a draggable bar from 0.5× to 2×. It snaps to 0.5, 0.75, 1, 1.5 and 2 and stops anywhere in between; pitch stays natural. Speed persists between launches.
+- **Playback speed:** a speed button in Now Playing opens a bar from 0.5× to 2× that snaps to common speeds. Pitch stays natural, and the speed is remembered.
+
+### Fixed
 - **Software Update:** Install Update now opens the install page and starts the iOS install prompt straight away, instead of trying an in-app install that iOS blocks.
-- **Removed Discord status.** Any saved Discord token is deleted from the Keychain on first launch.
+
+### Removed
+- **Discord status.** Any saved Discord token is deleted from the Keychain on first launch.
 
 ## 0.4.0
 
