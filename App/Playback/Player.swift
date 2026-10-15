@@ -42,9 +42,19 @@ final class Player: ObservableObject {
             if autoplay != oldValue { refreshAutoplay() }
         }
     }
+    /// Only pick songs already in the library (no Soulseek downloads). Saved in Settings.
+    @Published var autoplayLibraryOnly: Bool {
+        didSet {
+            UserDefaults.standard.set(autoplayLibraryOnly, forKey: AppSettings.autoplayLibraryOnlyKey)
+            if autoplayLibraryOnly != oldValue {
+                autoplaySeedID = nil  // Rebuild the list under the new rule.
+                refreshAutoplay()
+            }
+        }
+    }
     /// What autoplay will play after the queue, shown under Up Next. Not part of `queue` until
     /// each song's turn comes, so editing the queue never mixes the two up.
-    @Published private(set) var autoplayUpcoming: [Track] = []
+    @Published private(set) var autoplayUpcoming: [AutoplayItem] = []
     @Published private(set) var isFindingAutoplay = false
     /// Bit-perfect mode for USB DACs (see EngineBackend). Saved in Settings.
     @Published var bitPerfect: Bool {
@@ -85,6 +95,10 @@ final class Player: ObservableObject {
     weak var stats: StatsStore? {
         didSet { recommender.stats = stats }
     }
+    /// Downloads autoplay discoveries from Soulseek. Without it autoplay stays in the library.
+    var fetcher: SongFetcher?
+    /// Called with each song autoplay downloaded (the app adds it to a playlist).
+    var onAutoplayDownload: ((Track) -> Void)?
 
     private let engine: EngineBackend
     private let avPlayer: AVPlayerBackend
@@ -102,6 +116,12 @@ final class Player: ObservableObject {
     /// Recently played ids, oldest first, kept across launches so autoplay doesn't repeat them.
     private var recentlyPlayed: [String]
     private static let recentLimit = 200
+    /// Discoveries being fetched, by item id.
+    private var discoveryTasks: [String: Task<Void, Never>] = [:]
+    /// Songs Soulseek didn't have this session; not suggested again.
+    private var failedDiscoveries = Set<String>()
+    /// Discoveries fetched at once, in list order. Keeps downloads close to what plays next.
+    private static let discoveriesAhead = 2
 
     // Scrobbling: count real listening time, not position, so seeking doesn't cheat.
     private var listened: Double = 0
@@ -118,6 +138,7 @@ final class Player: ObservableObject {
         let savedRate = UserDefaults.standard.object(forKey: "playback.rate") as? Float ?? 1
         playbackRate = min(max(savedRate, Self.rateRange.lowerBound), Self.rateRange.upperBound)
         autoplay = AppSettings.flag(AppSettings.autoplayKey)
+        autoplayLibraryOnly = UserDefaults.standard.bool(forKey: AppSettings.autoplayLibraryOnlyKey)
         recentlyPlayed = UserDefaults.standard.stringArray(forKey: "autoplay.recent") ?? []
         engine.bitPerfect = bitPerfect
         engine.rate = playbackRate
@@ -243,7 +264,7 @@ final class Player: ObservableObject {
         let before = queue[..<min(index, queue.count)].filter { doomed.contains($0.id) }.count
         queue.removeAll { doomed.contains($0.id) }
         unshuffledQueue.removeAll { doomed.contains($0.id) }
-        autoplayUpcoming.removeAll { doomed.contains($0.id) }
+        setAutoplayUpcoming(autoplayUpcoming.filter { item in item.track.map { !doomed.contains($0.id) } ?? true })
         index = max(0, index - before)
         if queue.isEmpty {
             stop()
@@ -257,13 +278,16 @@ final class Player: ObservableObject {
 
     // MARK: Autoplay
 
-    /// Plays an autoplay song now. Past the end of the queue the songs before it are skipped;
-    /// with songs still queued it plays next-up and the rest of the queue follows.
+    /// Plays a ready autoplay song now. Past the end of the queue, ready songs before it are
+    /// skipped (discoveries still downloading stay for later); with songs still queued it plays
+    /// next-up and the rest of the queue follows.
     func playAutoplay(at offset: Int) {
-        guard autoplayUpcoming.indices.contains(offset) else { return }
-        let track = autoplayUpcoming.remove(at: offset)
+        guard autoplayUpcoming.indices.contains(offset), let track = autoplayUpcoming[offset].track else { return }
+        var items = autoplayUpcoming
+        items.remove(at: offset)
         if upNext.isEmpty {
-            autoplayUpcoming.removeFirst(offset)
+            let skipped = Set(items.prefix(offset).filter { $0.track != nil }.map(\.id))
+            items.removeAll { skipped.contains($0.id) }
             queue.append(track)
             unshuffledQueue.append(track)
             // What's left of the list follows on from this song. A fetch for the old end of the
@@ -278,67 +302,145 @@ final class Player: ObservableObject {
             unshuffledQueue.append(track)
             index += 1
         }
+        setAutoplayUpcoming(items)
         loadCurrent(autoplay: true)
     }
 
     func removeAutoplay(at offsets: IndexSet) {
-        autoplayUpcoming.remove(atOffsets: offsets)
+        var items = autoplayUpcoming
+        items.remove(atOffsets: offsets)
+        setAutoplayUpcoming(items)
         refreshAutoplay()
+    }
+
+    /// Every change to the list goes through here: fetches for discoveries that left the list
+    /// are cancelled, and the next discoveries start downloading.
+    private func setAutoplayUpcoming(_ items: [AutoplayItem]) {
+        let kept = Set(items.map(\.id))
+        for (id, task) in discoveryTasks where !kept.contains(id) {
+            task.cancel()
+            discoveryTasks[id] = nil
+        }
+        if items != autoplayUpcoming { autoplayUpcoming = items }
+        pumpDiscoveries()
     }
 
     /// Keeps the autoplay list in step with the queue: rebuilt when the queue's last song changes,
     /// topped up when it runs low, cleared when autoplay can't apply (off, repeat, nothing queued).
     private func refreshAutoplay() {
-        guard autoplay, repeatMode == .off, let seed = queue.last else {
+        guard autoplay, repeatMode == .off, let last = queue.last else {
             autoplayTask?.cancel()
             autoplayTask = nil
             autoplaySeedID = nil
             advanceWhenAutoplayReady = false
-            if !autoplayUpcoming.isEmpty { autoplayUpcoming = [] }
+            setAutoplayUpcoming([])
             if isFindingAutoplay { isFindingAutoplay = false }
             return
         }
-        if seed.id != autoplaySeedID {
-            autoplaySeedID = seed.id
-            autoplayUpcoming = []
-            fetchAutoplay(after: seed)
+        if last.id != autoplaySeedID {
+            autoplaySeedID = last.id
+            setAutoplayUpcoming([])
+            fetchAutoplay(after: AutoplaySeed(last))
         } else if autoplayUpcoming.count < 4, autoplayTask == nil {
-            fetchAutoplay(after: autoplayUpcoming.last ?? seed)
+            fetchAutoplay(after: autoplayUpcoming.last.map { AutoplaySeed($0.song) } ?? AutoplaySeed(last))
         }
     }
 
-    private func fetchAutoplay(after seed: Track) {
+    private func fetchAutoplay(after seed: AutoplaySeed) {
         autoplayTask?.cancel()
         let seedID = autoplaySeedID
         let wanted = max(10 - autoplayUpcoming.count, 1)
+        // Discoveries need Last.fm (the recommender only discovers from its picks) and Soulseek.
+        let canDiscover = !autoplayLibraryOnly && (fetcher?.isAvailable ?? false)
+        let maxDiscoveries = canDiscover ? (wanted + 1) / 2 : 0
         isFindingAutoplay = true
         autoplayTask = Task { [weak self] in
             guard let self else { return }
-            var picks = await self.recommender.recommendations(after: seed, count: wanted,
-                                                               excluding: self.autoplayExclusions(strict: true))
+            var picks = await self.recommender.recommendations(
+                after: seed, count: wanted, excludedTracks: self.autoplayExclusions(strict: true),
+                excludedSongs: self.discoveryExclusions(), maxDiscoveries: maxDiscoveries)
             guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
             if picks.isEmpty {
                 // Small library: everything was played recently. Repeat rather than stop.
-                picks = await self.recommender.recommendations(after: seed, count: wanted,
-                                                               excluding: self.autoplayExclusions(strict: false))
+                picks = await self.recommender.recommendations(
+                    after: seed, count: wanted, excludedTracks: self.autoplayExclusions(strict: false),
+                    excludedSongs: self.discoveryExclusions(), maxDiscoveries: maxDiscoveries)
                 guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
             }
             let present = Set(self.autoplayUpcoming.map(\.id))
-            self.autoplayUpcoming += picks.filter { !present.contains($0.id) }
             self.autoplayTask = nil
             self.isFindingAutoplay = false
-            if self.advanceWhenAutoplayReady {
-                self.advanceWhenAutoplayReady = false
-                if self.upNext.isEmpty, !self.autoplayUpcoming.isEmpty { self.playAutoplay(at: 0) }
+            self.setAutoplayUpcoming(self.autoplayUpcoming + picks.filter { !present.contains($0.id) })
+            self.advanceIfWaiting()
+        }
+    }
+
+    /// Starts fetching the first discoveries in the list that aren't ready yet.
+    private func pumpDiscoveries() {
+        guard let fetcher else { return }
+        var inFlight = discoveryTasks.count
+        for item in autoplayUpcoming where inFlight < Self.discoveriesAhead
+            && item.isDiscovery && item.track == nil && discoveryTasks[item.id] == nil {
+            inFlight += 1
+            let id = item.id
+            let song = item.song
+            discoveryTasks[id] = Task { [weak self] in
+                let outcome = await fetcher.fetch(song, priority: .high) { progress in
+                    self?.updateDiscovery(id, progress)
+                }
+                guard let self, !Task.isCancelled else { return }
+                self.discoveryTasks[id] = nil
+                self.finishDiscovery(id, outcome)
             }
         }
+    }
+
+    private func updateDiscovery(_ id: String, _ progress: SongFetcher.Progress) {
+        guard let position = autoplayUpcoming.firstIndex(where: { $0.id == id }),
+              autoplayUpcoming[position].track == nil else { return }
+        switch progress {
+        case .searching:
+            autoplayUpcoming[position].state = .searching
+        case let .downloading(fraction, _):
+            autoplayUpcoming[position].state = .downloading(fraction)
+        }
+    }
+
+    private func finishDiscovery(_ id: String, _ outcome: SongFetcher.Outcome) {
+        guard let position = autoplayUpcoming.firstIndex(where: { $0.id == id }) else { return }
+        var items = autoplayUpcoming
+        switch outcome {
+        case let .found(track, downloaded):
+            if downloaded { onAutoplayDownload?(track) }
+            let duplicate = queue.contains(track) || items.contains { $0.track?.id == track.id }
+            if duplicate {
+                items.remove(at: position)
+            } else {
+                items[position].state = .ready(track)
+            }
+        case let .notFound(reason):
+            failedDiscoveries.insert(TrackMatcher.songKey(items[position].song))
+            Diagnostics.shared.log("Autoplay: \(items[position].song.title) not found (\(reason))", category: "autoplay")
+            items.remove(at: position)
+        }
+        setAutoplayUpcoming(items)
+        refreshAutoplay()
+        advanceIfWaiting()
+    }
+
+    /// The queue ended while nothing was ready: play the first song that is.
+    private func advanceIfWaiting() {
+        guard advanceWhenAutoplayReady, upNext.isEmpty,
+              let ready = autoplayUpcoming.firstIndex(where: { $0.track != nil }) else { return }
+        advanceWhenAutoplayReady = false
+        playAutoplay(at: ready)
     }
 
     /// Songs autoplay shouldn't pick: what's queued or already lined up, and (when strict) what
     /// was played recently. The recent window shrinks with small libraries so there's always
     /// something left to choose from.
     private func autoplayExclusions(strict: Bool) -> Set<String> {
-        var ids = Set(autoplayUpcoming.map(\.id))
+        var ids = Set(autoplayUpcoming.compactMap { $0.track?.id })
         if strict {
             ids.formUnion(queue.map(\.id))
             let window = min(recentlyPlayed.count, Self.recentLimit, (library?.tracks.count ?? 0) / 2)
@@ -347,6 +449,11 @@ final class Player: ObservableObject {
             ids.formUnion(queue.suffix(3).map(\.id))
         }
         return ids
+    }
+
+    /// Songs not to discover: already lined up, or not on Soulseek earlier.
+    private func discoveryExclusions() -> Set<String> {
+        failedDiscoveries.union(autoplayUpcoming.map { TrackMatcher.songKey($0.song) })
     }
 
     private func notePlayed(_ track: Track) {
@@ -391,8 +498,8 @@ final class Player: ObservableObject {
             index = 0
             loadCurrent(autoplay: true)
         } else if autoplay, repeatMode == .off, current != nil {
-            if !autoplayUpcoming.isEmpty {
-                playAutoplay(at: 0)
+            if let ready = autoplayUpcoming.firstIndex(where: { $0.track != nil }) {
+                playAutoplay(at: ready)
             } else {
                 pause()
                 seek(to: 0)

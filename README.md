@@ -7,7 +7,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Spotify and Apple Music import:** rebuild a Spotify playlist, your Liked Songs, or an Apple Music playlist from your library, downloading what's missing from Soulseek in the original order.
 - **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
 - **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
-- **Autoplay:** when the queue ends, similar songs from your library keep playing (Last.fm similar tracks and artists, else the same artist, most played or random), shown under Up Next.
+- **Autoplay:** when the queue ends, similar songs keep playing (Last.fm similar tracks and artists, else the same artist, most played or random). Picks you don't have are downloaded from Soulseek ahead of time, unless you limit it to your library.
 - **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
@@ -164,7 +164,13 @@ Create an API account at [last.fm/api/account/create](https://www.last.fm/api/ac
 
 ### Autoplay
 
-On by default (Settings › Playback, or the ∞ button above the queue). When the queue ends, colon3 plays songs from your library: first those Last.fm lists as similar to the last song (`track.getSimilar`) or by similar artists (`artist.getSimilar`), which only need the API key from the Last.fm section. Without a key, or when none of Last.fm's picks are in your library, it falls back to more by the same artist, then your most played, then random. Songs played recently are skipped, and the next ten show under Up Next.
+On by default (Settings › Playback, or the ∞ button above the queue). When the queue ends, colon3 plays songs Last.fm lists as similar to the last song (`track.getSimilar`) or by similar artists (`artist.getSimilar`). Both only need the API key from the Last.fm section.
+
+- **Songs in your library** play straight away.
+- **Songs you don't have** (up to half of each batch) are searched on Soulseek and downloaded, two at a time, in the order they'll play. They're matched the same way as imports and go into a **Found by Autoplay** playlist, so you can keep or delete them. If one isn't ready when its turn comes, the next ready song plays first. Turn on **Autoplay Only from Library** in Settings › Playback to never download; downloads also only happen while you're logged in to Soulseek.
+- **Without a key**, or when Last.fm has nothing, it falls back to more by the same artist, then your most played, then random.
+
+Songs played recently are skipped, and the next ten show under Up Next with their download progress. Autoplay and imports share one Soulseek search queue (at most one search every 10 seconds), and autoplay's searches go first.
 
 ### Importing from Spotify
 

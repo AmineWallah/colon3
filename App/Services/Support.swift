@@ -97,6 +97,8 @@ enum AppSettings {
     static let showMissingKey = "showMissingSongs"
     static let musicBrainzKey = "musicBrainzLookup"
     static let autoplayKey = "autoplay"
+    /// Defaults to off: autoplay may download songs it finds through Last.fm.
+    static let autoplayLibraryOnlyKey = "autoplayLibraryOnly"
     /// These three default to off.
     static let bitPerfectKey = "bitPerfect"
     static let seedingKey = "seedingMode"

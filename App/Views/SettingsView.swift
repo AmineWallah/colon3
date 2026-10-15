@@ -37,6 +37,8 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Autoplay", isOn: $player.autoplay)
+                    Toggle("Autoplay Only from Library", isOn: $player.autoplayLibraryOnly)
+                        .disabled(!player.autoplay)
                     NavigationLink {
                         EqualizerView(equalizer: player.equalizer)
                     } label: {
@@ -50,7 +52,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("Autoplay keeps playing songs from your library when the queue ends: ones Last.fm calls similar (if you've added a Last.fm API key below), else more by the same artist, your most played, or anything. Recently played songs are skipped.\n\nBit-Perfect Mode is for USB DACs: it switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
+                    Text("Autoplay keeps the music going when the queue ends. With a Last.fm API key (below) it picks songs Last.fm calls similar: ones in your library play straight away, and ones you don't have are found on Soulseek and downloaded a song or two ahead, into the \u{201C}Found by Autoplay\u{201D} playlist. Turn on Only from Library to never download. Without Last.fm it plays more by the same artist, your most played, or anything. Recently played songs are skipped.\n\nBit-Perfect Mode is for USB DACs: it switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
                 }
 
                 Section {

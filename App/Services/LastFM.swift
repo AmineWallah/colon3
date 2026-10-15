@@ -176,6 +176,8 @@ struct LastFMSimilarTrack {
     let title: String
     let artist: String
     let match: Double
+    /// Seconds; nil when Last.fm doesn't know.
+    let duration: Double?
 }
 
 struct LastFMSimilarArtist {
@@ -198,7 +200,9 @@ extension LastFM {
         return list(container?["track"]).compactMap { entry -> LastFMSimilarTrack? in
             guard let title = entry["name"] as? String,
                   let artist = (entry["artist"] as? [String: Any])?["name"] as? String else { return nil }
-            return LastFMSimilarTrack(title: title, artist: artist, match: number(entry["match"]))
+            let duration = number(entry["duration"])
+            return LastFMSimilarTrack(title: title, artist: artist, match: number(entry["match"]),
+                                      duration: duration > 0 ? duration : nil)
         }
     }
 

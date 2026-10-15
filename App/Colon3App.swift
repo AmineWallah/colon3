@@ -38,7 +38,10 @@ struct Colon3App: App {
         soulseek.completeness = completeness
         soulseek.stats = stats
         let playlists = PlaylistStore()
-        let importer = PlaylistImporter(soulseek: soulseek, library: library, playlists: playlists)
+        let fetcher = SongFetcher(soulseek: soulseek, library: library)
+        let importer = PlaylistImporter(soulseek: soulseek, library: library, playlists: playlists, fetcher: fetcher)
+        player.fetcher = fetcher
+        player.onAutoplayDownload = { [weak playlists] track in playlists?.addToAutoplayDiscoveries(track) }
         let wifi = WiFiTransferServer(root: library.root)
         wifi.onFilesChanged = { [weak library] in library?.rescan() }
         _completeness = StateObject(wrappedValue: completeness)

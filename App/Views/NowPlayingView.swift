@@ -460,13 +460,18 @@ struct QueueView: View {
 
                     if showsAutoplay, !player.autoplayUpcoming.isEmpty {
                         Section {
-                            ForEach(Array(player.autoplayUpcoming.enumerated()), id: \.element.id) { offset, track in
+                            ForEach(Array(player.autoplayUpcoming.enumerated()), id: \.element.id) { offset, item in
                                 Button {
                                     player.playAutoplay(at: offset)
                                 } label: {
-                                    row(track).opacity(0.75)
+                                    if let track = item.track {
+                                        row(track, badge: item.isDiscovery ? "arrow.down.circle.fill" : nil).opacity(0.75)
+                                    } else {
+                                        discoveryRow(item).opacity(0.6)
+                                    }
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(item.track == nil)
                                 .listRowBackground(Color.clear)
                                 .listRowSeparatorTint(.white.opacity(0.15))
                                 .listRowInsets(EdgeInsets(top: 6, leading: 28, bottom: 6, trailing: 20))
@@ -495,14 +500,49 @@ struct QueueView: View {
         }
     }
 
-    private func row(_ track: Track) -> some View {
+    private func row(_ track: Track, badge: String? = nil) -> some View {
         HStack(spacing: 12) {
             ArtworkView(source: library.artwork(for: track), size: 44, cornerRadius: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title).lineLimit(1)
-                Text(track.artist).font(.subheadline).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                HStack(spacing: 4) {
+                    if let badge {
+                        // Downloaded by autoplay from Soulseek.
+                        Image(systemName: badge).font(.caption2)
+                    }
+                    Text(track.artist).lineLimit(1)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
             }
             Spacer()
+        }
+    }
+
+    /// A Last.fm pick that isn't in the library yet: shown while it's found and downloaded.
+    private func discoveryRow(_ item: AutoplayItem) -> some View {
+        HStack(spacing: 12) {
+            ArtworkView(source: .remote(item.song.primaryArtist + " " + item.song.title), size: 44, cornerRadius: 5)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.song.title).lineLimit(1)
+                Text(item.song.primaryArtist + " · " + discoveryStatus(item.state))
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "icloud.and.arrow.down")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+        }
+    }
+
+    private func discoveryStatus(_ state: AutoplayItem.State) -> String {
+        switch state {
+        case .ready: return "Ready"
+        case .waiting: return "Will download"
+        case .searching: return "Searching Soulseek…"
+        case let .downloading(fraction): return "Downloading \(Int(fraction * 100))%"
         }
     }
 

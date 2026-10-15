@@ -75,6 +75,15 @@ final class PlaylistStore: ObservableObject {
         edit(playlist) { $0.trackIDs = ids }
     }
 
+    /// Songs autoplay downloaded go into one playlist, so they're easy to find, keep or delete.
+    func addToAutoplayDiscoveries(_ track: Track) {
+        let key = "autoplay.discoveriesPlaylist"
+        let existing = UserDefaults.standard.string(forKey: key).flatMap(UUID.init(uuidString:)).flatMap { playlist(id: $0) }
+        let target = existing ?? create(named: "Found by Autoplay")
+        if existing == nil { UserDefaults.standard.set(target.id.uuidString, forKey: key) }
+        add([track], to: target)
+    }
+
     /// Offsets refer to the resolved (existing) track list shown on screen.
     func remove(at offsets: IndexSet, from playlist: Playlist, library: LibraryStore) {
         let visible = visibleIndices(of: playlist, library: library)

@@ -404,6 +404,7 @@ struct AppleMusicImportPicker: View {
 
 struct ImportProgressView: View {
     @EnvironmentObject private var importer: PlaylistImporter
+    @EnvironmentObject private var soulseek: SoulseekModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -421,7 +422,7 @@ struct ImportProgressView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
-                    if job.isRunning, importer.waitingForSoulseek {
+                    if job.isRunning, !soulseek.isLoggedIn {
                         Label("Waiting for Soulseek. Log in under Settings if you haven't.", systemImage: "antenna.radiowaves.left.and.right")
                             .font(.subheadline)
                             .foregroundStyle(.orange)

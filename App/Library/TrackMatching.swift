@@ -101,6 +101,11 @@ enum TrackMatcher {
         return String(scalars)
     }
 
+    /// Identifies a song across sources: "title|artist", normalised.
+    static func songKey(_ song: WantedSong) -> String {
+        normalizeTitle(song.title) + "|" + normalizeName(song.primaryArtist)
+    }
+
     // MARK: Soulseek
 
     /// "Artist Title" with the version noise removed, in the form the Soulseek server matches:
