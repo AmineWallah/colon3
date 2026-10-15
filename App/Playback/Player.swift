@@ -43,7 +43,22 @@ final class Player: ObservableObject {
         }
     }
     @Published private(set) var output = OutputInfo()
-    /// Fires whenever what's playing, play/pause or the position jumps (Discord, widgets).
+    /// Playback speed (0.5–2×), kept across launches.
+    @Published var playbackRate: Float {
+        didSet {
+            // Assigning inside didSet doesn't re-trigger it, so clamp and carry on.
+            let clamped = min(max(playbackRate, Self.rateRange.lowerBound), Self.rateRange.upperBound)
+            if clamped != playbackRate { playbackRate = clamped }
+            UserDefaults.standard.set(playbackRate, forKey: "playback.rate")
+            engine.rate = playbackRate
+            avPlayer.rate = playbackRate
+            updateNowPlaying()
+            refreshOutputInfo()
+        }
+    }
+    nonisolated static let rateRange: ClosedRange<Float> = 0.5...2
+    nonisolated static let ratePresets: [Float] = [0.5, 0.75, 1, 1.5, 2]
+    /// Fires whenever what's playing, play/pause or the position jumps (widgets, observers).
     let stateChanged = PassthroughSubject<Void, Never>()
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
@@ -73,7 +88,11 @@ final class Player: ObservableObject {
         engine = EngineBackend()
         avPlayer = AVPlayerBackend()
         bitPerfect = UserDefaults.standard.bool(forKey: AppSettings.bitPerfectKey)
+        let savedRate = UserDefaults.standard.object(forKey: "playback.rate") as? Float ?? 1
+        playbackRate = min(max(savedRate, Self.rateRange.lowerBound), Self.rateRange.upperBound)
         engine.bitPerfect = bitPerfect
+        engine.rate = playbackRate
+        avPlayer.rate = playbackRate
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try? session.setSupportsMultichannelContent(true)
@@ -337,7 +356,8 @@ final class Player: ObservableObject {
                               routeKind: OutputInfo.Kind(port?.portType),
                               hardwareRate: session.sampleRate,
                               fileRate: fileRate,
-                              usingEngine: backend === engine)
+                              usingEngine: backend === engine,
+                              speed: playbackRate)
         if info != output { output = info }
     }
 
@@ -446,7 +466,8 @@ final class Player: ObservableObject {
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackRate) : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: Double(playbackRate),
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
         if let album = library?.album(containing: track)?.title ?? track.album {
@@ -489,18 +510,20 @@ struct OutputInfo: Equatable {
     var hardwareRate: Double = 0
     var fileRate: Double = 0
     var usingEngine = false
+    var speed: Float = 1
 
     var ratesMatch: Bool { fileRate > 0 && abs(fileRate - hardwareRate) < 1 }
 
     /// Bit-perfect is only possible over a wired digital output with matching rates.
     func isBitPerfect(enabled: Bool) -> Bool {
-        enabled && usingEngine && routeKind == .wired && ratesMatch
+        enabled && usingEngine && routeKind == .wired && ratesMatch && abs(speed - 1) < 0.001
     }
 
     /// Why it isn't, in a few words.
     func blocker(enabled: Bool) -> String? {
         guard enabled else { return nil }
         if !usingEngine { return "Spatial audio file" }
+        if abs(speed - 1) >= 0.001 { return "Speed isn't 1×" }
         switch routeKind {
         case .bluetooth: return "Bluetooth re-encodes audio"
         case .airPlay: return "AirPlay resamples audio"

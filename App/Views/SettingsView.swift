@@ -92,8 +92,6 @@ struct SettingsView: View {
 
                 LastFMSection(scrobbling: $scrobbling)
 
-                DiscordSection()
-
                 Section {
                     LabeledContent("Songs", value: "\(library.tracks.count)")
                     LabeledContent("Albums", value: "\(library.albums.count)")
@@ -329,76 +327,6 @@ struct BitPerfectStatus: View {
         }
         .font(.subheadline)
         .onAppear { player.refreshOutputInfo() }
-    }
-}
-
-struct DiscordSection: View {
-    @EnvironmentObject private var discord: DiscordPresence
-    @State private var token = ""
-    @State private var showWarning = false
-    @State private var showPaste = false
-    @State private var showLogin = false
-
-    var body: some View {
-        Section {
-            if discord.hasToken {
-                Toggle("Show What I'm Listening To", isOn: $discord.enabled)
-                statusRow
-                Picker("Status", selection: $discord.onlineStatus) {
-                    ForEach(DiscordPresence.OnlineStatus.allCases) { Text($0.label).tag($0) }
-                }
-                TextField("Application ID (for cover art)", text: $discord.applicationID)
-                    .keyboardType(.numberPad)
-                    .font(.body.monospacedDigit())
-                Button("Remove Token", role: .destructive) { discord.forgetToken() }
-            } else {
-                Button {
-                    showWarning = true
-                } label: {
-                    Label("Log in to Discord", systemImage: "person.crop.circle.badge.checkmark")
-                }
-                Button("Paste Token Instead") { showPaste = true }
-                    .font(.subheadline)
-                if showPaste {
-                    SecureField("Discord Token", text: $token)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Save Token") { showWarning = true }
-                        .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        } header: {
-            Text("Discord")
-        } footer: {
-            Text(discord.hasToken
-                 ? "Shows “Listening to colon3” with the song and artist while music plays. For cover art, create an application at discord.com/developers (name it colon3) and paste its Application ID."
-                 : "Discord has no official way for iPhone apps to set your status, so colon3 logs into Discord in a web view and reads your account token once. Pasting it yourself works too (Discord in a browser › Developer Tools › Network › any request › Authorization header). It's stored in the Keychain and only sent to Discord.")
-        }
-        .sheet(isPresented: $showLogin) {
-            DiscordLoginView { token in discord.saveToken(token) }
-        }
-        .alert("Use your Discord account?", isPresented: $showWarning) {
-            Button("Cancel", role: .cancel) {}
-            Button("I Understand") {
-                if showPaste { discord.saveToken(token); token = "" } else { showLogin = true }
-            }
-        } message: {
-            Text("Using a token from a third-party app breaks Discord's Terms of Service and could get your account flagged. Anyone with the token has full access to your account, so never share it.")
-        }
-    }
-
-    @ViewBuilder
-    private var statusRow: some View {
-        switch discord.status {
-        case .off:
-            Label("Off", systemImage: "circle").foregroundStyle(.secondary)
-        case .connecting:
-            Label("Connecting…", systemImage: "antenna.radiowaves.left.and.right").foregroundStyle(.secondary)
-        case let .connected(name):
-            Label("Connected as \(name)", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-        case let .failed(message):
-            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-        }
     }
 }
 

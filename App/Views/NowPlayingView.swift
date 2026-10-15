@@ -15,6 +15,7 @@ struct NowPlayingView: View {
     @EnvironmentObject private var router: AppRouter
     @State private var mode: Mode = .artwork
     @State private var showEqualizer = false
+    @State private var showSpeed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +45,11 @@ struct NowPlayingView: View {
                     .padding(.top, mode == .artwork ? 0 : 8)
                 transport
                     .padding(.vertical, 22)
+                if showSpeed {
+                    SpeedControl()
+                        .padding(.bottom, 14)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 VolumeRow()
                 bottomBar
                     .padding(.top, 22)
@@ -65,6 +71,7 @@ struct NowPlayingView: View {
                 .presentationDetents([.medium, .large])
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: mode)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpeed)
     }
 
     private var largeArtwork: some View {
@@ -200,12 +207,30 @@ struct NowPlayingView: View {
         HStack {
             modeButton(.lyrics, symbol: "quote.bubble")
             Spacer()
+            speedButton
+            Spacer()
             AirPlayButton()
                 .frame(width: 44, height: 44)
             Spacer()
             modeButton(.queue, symbol: "list.bullet")
         }
         .padding(.horizontal, 24)
+    }
+
+    private var speedButton: some View {
+        let changed = abs(player.playbackRate - 1) >= 0.001
+        return Button {
+            showSpeed.toggle()
+        } label: {
+            Text(SpeedControl.label(player.playbackRate))
+                .font(.subheadline.weight(.bold).monospacedDigit())
+                .foregroundStyle(showSpeed ? Color.black.opacity(0.75) : Color.white.opacity(changed ? 1 : 0.7))
+                .frame(minWidth: 44, minHeight: 44)
+                .padding(.horizontal, 4)
+                .background(showSpeed ? Color.white.opacity(0.8) : Color.clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Playback speed")
     }
 
     private func modeButton(_ target: Mode, symbol: String) -> some View {
@@ -443,5 +468,91 @@ struct QueueView: View {
                 .background(active ? Color.white.opacity(0.8) : Color.white.opacity(0.12), in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Draggable speed bar, 0.5× to 2×. Snaps to 0.5, 0.75, 1, 1.5 and 2 when you pass near them,
+/// stops anywhere in between in 0.05 steps, and the preset labels underneath are tappable.
+struct SpeedControl: View {
+    @EnvironmentObject private var player: Player
+
+    private let lower = Player.rateRange.lowerBound
+    private let upper = Player.rateRange.upperBound
+
+    static func label(_ rate: Float) -> String {
+        var text = String(format: "%.2f", rate)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text + "×"
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Speed").font(.caption.weight(.semibold))
+                Spacer()
+                Text(Self.label(player.playbackRate))
+                    .font(.caption.weight(.bold).monospacedDigit())
+                if abs(player.playbackRate - 1) >= 0.001 {
+                    Button("Reset") { player.playbackRate = 1 }
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .padding(.leading, 8)
+                }
+            }
+            .foregroundStyle(.white.opacity(0.75))
+
+            GeometryReader { geometry in
+                let width = max(geometry.size.width, 1)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.22)).frame(height: 6)
+                    Capsule().fill(.white.opacity(0.8)).frame(width: max(6, position(player.playbackRate, width)), height: 6)
+                    ForEach(Player.ratePresets, id: \.self) { preset in
+                        Circle()
+                            .fill(.white.opacity(0.55))
+                            .frame(width: 4, height: 4)
+                            .offset(x: position(preset, width) - 2)
+                    }
+                    Circle()
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                        .frame(width: 18, height: 18)
+                        .offset(x: position(player.playbackRate, width) - 9)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let fraction = Float(min(max(gesture.location.x / width, 0), 1))
+                            var value = lower + fraction * (upper - lower)
+                            value = (value / 0.05).rounded() * 0.05
+                            if let preset = Player.ratePresets.first(where: { abs($0 - value) <= 0.04 }) { value = preset }
+                            if abs(value - player.playbackRate) > 0.001 { player.playbackRate = value }
+                        }
+                )
+            }
+            .frame(height: 26)
+
+            GeometryReader { geometry in
+                let width = max(geometry.size.width, 1)
+                ForEach(Player.ratePresets, id: \.self) { preset in
+                    Text(Self.label(preset))
+                        .font(.caption2.weight(abs(preset - player.playbackRate) < 0.001 ? .bold : .regular).monospacedDigit())
+                        .foregroundStyle(.white.opacity(abs(preset - player.playbackRate) < 0.001 ? 1 : 0.55))
+                        .fixedSize()
+                        .position(x: min(max(position(preset, width), 12), width - 12), y: 8)
+                        .onTapGesture { player.playbackRate = preset }
+                }
+            }
+            .frame(height: 16)
+        }
+        .sensoryFeedback(.selection, trigger: player.playbackRate) { _, new in
+            Player.ratePresets.contains { abs($0 - new) < 0.001 }
+        }
+    }
+
+    private func position(_ rate: Float, _ width: CGFloat) -> CGFloat {
+        CGFloat((rate - lower) / (upper - lower)) * width
     }
 }

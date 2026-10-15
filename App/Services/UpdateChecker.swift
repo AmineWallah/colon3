@@ -115,15 +115,13 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// Opens the OTA install prompt; falls back to the install page in Safari.
+    /// iOS only lets Safari start an over-the-air install (an app can't open itms-services:
+    /// links itself), so this opens the channel's install page with ?install=1, which makes the
+    /// page show the iOS install prompt straight away.
     func install(_ remote: Remote) {
-        let page = URL(string: remote.page ?? source)
-        if let link = remote.install.flatMap(URL.init(string:)) {
-            UIApplication.shared.open(link) { opened in
-                if !opened, let page { UIApplication.shared.open(page) }
-            }
-        } else if let page {
-            UIApplication.shared.open(page)
-        }
+        var page = remote.page ?? source
+        if !page.hasSuffix("/") { page += "/" }
+        if let url = URL(string: page + "?install=1") { UIApplication.shared.open(url) }
     }
 
     func openPage() {

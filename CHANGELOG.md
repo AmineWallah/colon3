@@ -3,6 +3,12 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
+## 0.5.0
+
+- **Playback speed:** a speed button in Now Playing opens a draggable bar from 0.5× to 2×. It snaps to 0.5, 0.75, 1, 1.5 and 2 and stops anywhere in between; pitch stays natural. Speed persists between launches.
+- **Software Update:** Install Update now opens the install page and starts the iOS install prompt straight away, instead of trying an in-app install that iOS blocks.
+- **Removed Discord status.** Any saved Discord token is deleted from the Keychain on first launch.
+
 ## 0.4.0
 
 ### Library and playback

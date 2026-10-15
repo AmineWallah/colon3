@@ -9,7 +9,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
-- **Last.fm** scrobbling with your own API key, and optional Discord "Listening to" status.
+- **Last.fm** scrobbling with your own API key.
 
 Meant for sideloading. It won't pass App Store review.
 
@@ -154,10 +154,6 @@ Settings › Playback. With a wired USB DAC, each song's sample rate is requeste
 ### Wi-Fi Transfer
 
 Settings › Wi-Fi Transfer, then open the address on a computer on the same network and enter the code. Drop files or folders in, download or delete files. Over a cable on Linux: `ifuse --documents com.aminewallah.colon3 ~/iphone`.
-
-### Discord
-
-Settings › Discord. iOS apps have no official way to set Discord presence, so this logs into Discord's gateway with your account token, like Kizzy does on Android. That breaks Discord's Terms of Service and could get the account flagged. For cover art, create an application at discord.com/developers named colon3 and paste its Application ID.
 
 ### Last.fm
 

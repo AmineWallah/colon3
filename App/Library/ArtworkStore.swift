@@ -270,27 +270,6 @@ actor CoverLookup {
         }
     }
 
-    /// A public 512px cover URL (for Discord), without downloading the image.
-    func artworkURL(query: String, entity: String) async -> String? {
-        let wait = spacing - Date().timeIntervalSince(lastRequest)
-        lastRequest = Date().addingTimeInterval(max(wait, 0))
-        if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
-
-        var components = URLComponents(string: "https://itunes.apple.com/search")!
-        components.queryItems = [
-            URLQueryItem(name: "term", value: query),
-            URLQueryItem(name: "entity", value: entity),
-            URLQueryItem(name: "media", value: "music"),
-            URLQueryItem(name: "limit", value: "3"),
-        ]
-        guard let url = components.url,
-              let result = try? await URLSession.shared.data(from: url),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200,
-              let decoded = try? JSONDecoder().decode(SearchResponse.self, from: result.0),
-              let small = decoded.results.first(where: { $0.artworkUrl100 != nil })?.artworkUrl100 else { return nil }
-        return small.replacingOccurrences(of: "100x100bb", with: "512x512bb")
-    }
-
     private struct SearchResponse: Decodable {
         struct Result: Decodable {
             let artworkUrl100: String?

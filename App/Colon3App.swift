@@ -11,7 +11,6 @@ struct Colon3App: App {
     @StateObject private var completeness: AlbumCompletenessStore
     @StateObject private var stats: StatsStore
     @StateObject private var router = AppRouter()
-    @StateObject private var discord: DiscordPresence
     @StateObject private var wifi: WiFiTransferServer
     @StateObject private var updates = UpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
@@ -19,6 +18,11 @@ struct Colon3App: App {
 
     init() {
         Diagnostics.shared.start()
+        // Discord presence was removed in 0.5.0: forget any token an earlier build saved.
+        Keychain.delete(account: "token", service: "colon3.discord")
+        for key in ["discordPresence", "discord.applicationID", "discord.status"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         let library = LibraryStore()
         let player = Player(equalizer: Equalizer())
         let lastfm = LastFM()
@@ -30,8 +34,6 @@ struct Colon3App: App {
         let completeness = AlbumCompletenessStore()
         soulseek.completeness = completeness
         soulseek.stats = stats
-        let discord = DiscordPresence()
-        discord.attach(player)
         let wifi = WiFiTransferServer(root: library.root)
         wifi.onFilesChanged = { [weak library] in library?.rescan() }
         _completeness = StateObject(wrappedValue: completeness)
@@ -41,7 +43,6 @@ struct Colon3App: App {
         _player = StateObject(wrappedValue: player)
         _lastfm = StateObject(wrappedValue: lastfm)
         _stats = StateObject(wrappedValue: stats)
-        _discord = StateObject(wrappedValue: discord)
         _wifi = StateObject(wrappedValue: wifi)
     }
 
@@ -58,7 +59,6 @@ struct Colon3App: App {
                 .environmentObject(completeness)
                 .environmentObject(stats)
                 .environmentObject(router)
-                .environmentObject(discord)
                 .environmentObject(wifi)
                 .environmentObject(updates)
                 .onAppear {
@@ -85,7 +85,6 @@ struct Colon3App: App {
                 soulseek.reconnectIfNeeded()
                 library.rescan()
                 lastfm.flush()
-                discord.resumeIfNeeded()
                 updates.checkIfDue()
             case .background:
                 stats.save()

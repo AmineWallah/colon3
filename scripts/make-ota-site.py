@@ -108,7 +108,7 @@ def main() -> None:
     <h1>{html.escape(name)}{f' <span style="color:#ff9500;font-size:20px">BETA</span>' if label else ""}</h1>
     <p class="meta">Version {html.escape(version)} (build {html.escape(build)}) · {size_mb:.1f} MB<br>
     Built {built}{f" · <code>{commit}</code>" if commit else ""}</p>
-    <a class="install" href="{html.escape(install_url)}">Install</a>
+    <a class="install" id="install" href="{html.escape(install_url)}">Install</a>
     <ol>
       <li>Open this page in Safari; other browsers can't install apps.</li>
       <li>Tap Install, confirm, then watch the home screen.</li>
@@ -116,6 +116,12 @@ def main() -> None:
     </ol>
   </div>
 </main>
+<script>
+  // Opened from colon3's Software Update (?install=1): show the iOS install prompt right away.
+  if (new URLSearchParams(location.search).get("install") === "1") {{
+    setTimeout(function () {{ location.href = document.getElementById("install").href; }}, 400);
+  }}
+</script>
 </body>
 </html>
 """

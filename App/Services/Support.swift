@@ -99,7 +99,6 @@ enum AppSettings {
     /// These three default to off.
     static let bitPerfectKey = "bitPerfect"
     static let seedingKey = "seedingMode"
-    static let discordKey = "discordPresence"
 
     static var artworkLookupEnabled: Bool { flag(artworkLookupKey) }
     static var lyricsLookupEnabled: Bool { flag(lyricsLookupKey) }

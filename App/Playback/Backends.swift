@@ -8,6 +8,8 @@ protocol PlaybackBackend: AnyObject {
     var duration: Double { get }
     var currentTime: Double { get }
     var isPlaying: Bool { get }
+    /// Playback speed, 0.5–2. Pitch stays natural.
+    var rate: Float { get set }
     func load(_ url: URL) throws
     func play()
     func pause()
@@ -41,7 +43,17 @@ final class EngineBackend: PlaybackBackend {
 
     private var engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
+    /// Speed change without pitch change. Bypassed at 1×, so normal (and bit-perfect) playback
+    /// never goes through it.
+    private let timePitch = AVAudioUnitTimePitch()
     let eq = AVAudioUnitEQ(numberOfBands: Equalizer.maxBands)
+
+    var rate: Float = 1 {
+        didSet {
+            timePitch.rate = rate
+            timePitch.bypass = abs(rate - 1) < 0.001
+        }
+    }
 
     private var file: AVAudioFile?
     private var connectedFormat: AVAudioFormat?
@@ -124,7 +136,10 @@ final class EngineBackend: PlaybackBackend {
 
     private func attachGraph() {
         engine.attach(node)
+        engine.attach(timePitch)
         engine.attach(eq)
+        timePitch.rate = rate
+        timePitch.bypass = abs(rate - 1) < 0.001
         node.volume = 1
         engine.mainMixerNode.outputVolume = 1
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
@@ -136,7 +151,8 @@ final class EngineBackend: PlaybackBackend {
     }
 
     private func connect(_ format: AVAudioFormat) {
-        engine.connect(node, to: eq, format: format)
+        engine.connect(node, to: timePitch, format: format)
+        engine.connect(timePitch, to: eq, format: format)
         engine.connect(eq, to: engine.mainMixerNode, format: format)
         connectedFormat = format
     }
@@ -146,6 +162,7 @@ final class EngineBackend: PlaybackBackend {
     private func rebuildEngine() {
         engine.stop()
         engine.detach(node)
+        engine.detach(timePitch)
         engine.detach(eq)
         engine = AVAudioEngine()
         connectedFormat = nil
@@ -242,6 +259,13 @@ final class AVPlayerBackend: PlaybackBackend {
 
     var isPlaying: Bool { player.rate > 0 }
 
+    var rate: Float = 1 {
+        didSet {
+            player.defaultRate = rate
+            if player.rate > 0 { player.rate = rate }
+        }
+    }
+
     var duration: Double {
         guard let duration = player.currentItem?.duration, duration.isNumeric else { return 0 }
         return duration.seconds
@@ -255,6 +279,7 @@ final class AVPlayerBackend: PlaybackBackend {
     func load(_ url: URL) throws {
         let item = AVPlayerItem(url: url)
         item.allowedAudioSpatializationFormats = .monoStereoAndMultichannel
+        item.audioTimePitchAlgorithm = .spectral  // keeps voices natural when sped up or slowed
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item,
                                                              queue: .main) { [weak self] _ in
@@ -263,7 +288,10 @@ final class AVPlayerBackend: PlaybackBackend {
         player.replaceCurrentItem(with: item)
     }
 
-    func play() { player.play() }
+    func play() {
+        player.defaultRate = rate
+        player.play()
+    }
     func pause() { player.pause() }
 
     func seek(to seconds: Double) {
