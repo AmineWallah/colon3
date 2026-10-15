@@ -6,13 +6,16 @@ struct Colon3App: App {
     @StateObject private var soulseek: SoulseekModel
     @StateObject private var player: Player
     @StateObject private var favorites = FavoritesStore()
-    @StateObject private var playlists = PlaylistStore()
     @StateObject private var lastfm: LastFM
     @StateObject private var completeness: AlbumCompletenessStore
     @StateObject private var stats: StatsStore
     @StateObject private var router = AppRouter()
     @StateObject private var wifi: WiFiTransferServer
     @StateObject private var updates = UpdateChecker()
+    @StateObject private var spotify = SpotifyService()
+    @StateObject private var appleMusic = AppleMusicLibrary()
+    @StateObject private var playlists: PlaylistStore
+    @StateObject private var importer: PlaylistImporter
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
 
@@ -34,6 +37,8 @@ struct Colon3App: App {
         let completeness = AlbumCompletenessStore()
         soulseek.completeness = completeness
         soulseek.stats = stats
+        let playlists = PlaylistStore()
+        let importer = PlaylistImporter(soulseek: soulseek, library: library, playlists: playlists)
         let wifi = WiFiTransferServer(root: library.root)
         wifi.onFilesChanged = { [weak library] in library?.rescan() }
         _completeness = StateObject(wrappedValue: completeness)
@@ -44,6 +49,8 @@ struct Colon3App: App {
         _lastfm = StateObject(wrappedValue: lastfm)
         _stats = StateObject(wrappedValue: stats)
         _wifi = StateObject(wrappedValue: wifi)
+        _playlists = StateObject(wrappedValue: playlists)
+        _importer = StateObject(wrappedValue: importer)
     }
 
     var body: some Scene {
@@ -61,6 +68,9 @@ struct Colon3App: App {
                 .environmentObject(router)
                 .environmentObject(wifi)
                 .environmentObject(updates)
+                .environmentObject(spotify)
+                .environmentObject(appleMusic)
+                .environmentObject(importer)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()

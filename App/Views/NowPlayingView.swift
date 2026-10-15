@@ -410,6 +410,8 @@ struct QueueView: View {
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var library: LibraryStore
 
+    private var showsAutoplay: Bool { player.autoplay && player.repeatMode == .off }
+
     var body: some View {
         VStack(spacing: 10) {
             HStack {
@@ -419,13 +421,26 @@ struct QueueView: View {
                 toggle(symbol: player.repeatMode == .one ? "repeat.1" : "repeat", active: player.repeatMode != .off) {
                     player.cycleRepeat()
                 }
+                toggle(symbol: "infinity", active: player.autoplay) { player.autoplay.toggle() }
+                    .accessibilityLabel("Autoplay")
             }
             .padding(.horizontal, 28)
 
-            if player.upNext.isEmpty {
+            if player.upNext.isEmpty, !showsAutoplay || player.autoplayUpcoming.isEmpty {
                 Spacer()
-                Text(player.repeatMode == .all ? "The queue will repeat." : "Nothing else queued.")
-                    .foregroundStyle(.white.opacity(0.6))
+                Group {
+                    if player.repeatMode == .all {
+                        Text("The queue will repeat.")
+                    } else if showsAutoplay, player.isFindingAutoplay {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.white)
+                            Text("Finding songs for Autoplay…")
+                        }
+                    } else {
+                        Text("Nothing else queued.")
+                    }
+                }
+                .foregroundStyle(.white.opacity(0.6))
                 Spacer()
             } else {
                 List {
@@ -433,14 +448,7 @@ struct QueueView: View {
                         Button {
                             player.jump(to: player.index + 1 + offset)
                         } label: {
-                            HStack(spacing: 12) {
-                                ArtworkView(source: library.artwork(for: track), size: 44, cornerRadius: 5)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(track.title).lineLimit(1)
-                                    Text(track.artist).font(.subheadline).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
-                                }
-                                Spacer()
-                            }
+                            row(track)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
@@ -449,6 +457,34 @@ struct QueueView: View {
                     }
                     .onMove { player.moveInQueue(from: $0, to: $1) }
                     .onDelete { player.removeFromQueue(at: $0) }
+
+                    if showsAutoplay, !player.autoplayUpcoming.isEmpty {
+                        Section {
+                            ForEach(Array(player.autoplayUpcoming.enumerated()), id: \.element.id) { offset, track in
+                                Button {
+                                    player.playAutoplay(at: offset)
+                                } label: {
+                                    row(track).opacity(0.75)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparatorTint(.white.opacity(0.15))
+                                .listRowInsets(EdgeInsets(top: 6, leading: 28, bottom: 6, trailing: 20))
+                            }
+                            .onDelete { player.removeAutoplay(at: $0) }
+                        } header: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "infinity")
+                                Text("Autoplay")
+                                Spacer()
+                                if player.isFindingAutoplay { ProgressView().controlSize(.small).tint(.white) }
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .textCase(nil)
+                            .padding(.leading, 12)
+                        }
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -456,6 +492,17 @@ struct QueueView: View {
                 .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.92),
                                              .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
             }
+        }
+    }
+
+    private func row(_ track: Track) -> some View {
+        HStack(spacing: 12) {
+            ArtworkView(source: library.artwork(for: track), size: 44, cornerRadius: 5)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title).lineLimit(1)
+                Text(track.artist).font(.subheadline).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+            }
+            Spacer()
         }
     }
 

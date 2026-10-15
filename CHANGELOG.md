@@ -5,6 +5,10 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 ## 0.5.0
 
+- **Autoplay:** when the queue runs out, colon3 keeps playing songs from your library. With a Last.fm API key saved, it picks songs and artists Last.fm calls similar; otherwise (or when Last.fm has nothing) more by the same artist, then your most played, then anything. Recently played songs are skipped. Upcoming autoplay songs show under Up Next, where you can tap or swipe them away. On by default; turn it off in Settings › Playback or with the ∞ button in the queue.
+- **Import from Spotify:** log in with your own Spotify developer app (Client ID only, no secret), pick one of your playlists or Liked Songs, and colon3 builds a playlist from it in the same order. Songs already in your library are added straight away; the rest are searched on Soulseek one at a time, and the best match is downloaded: right title, artist and length, lossless or high bitrate and a free slot preferred, and no live, remix or karaoke versions unless the original is one. If a download fails or stalls, the next-best file is tried. Each song shows its progress, with Cancel and Retry Not Found. Spotify only lets developer apps read playlists you own or collaborate on.
+- **Import from Apple Music:** the same for playlists in the Music app on your iPhone.
+- Importing the same playlist again updates the playlist it made last time. Imports keep going if you close the import screen, and searches don't touch the Search tab.
 - **Playback speed:** a speed button in Now Playing opens a draggable bar from 0.5× to 2×. It snaps to 0.5, 0.75, 1, 1.5 and 2 and stops anywhere in between; pitch stays natural. Speed persists between launches.
 - **Software Update:** Install Update now opens the install page and starts the iOS install prompt straight away, instead of trying an in-app install that iOS blocks.
 - **Removed Discord status.** Any saved Discord token is deleted from the Keychain on first launch.

@@ -17,6 +17,9 @@ struct RouterPresenters: ViewModifier {
             .sheet(item: active ? $router.playlistRequest : .constant(nil)) { request in
                 AddToPlaylistSheet(request: request)
             }
+            .sheet(item: active ? $router.playlistImport : .constant(nil)) { route in
+                PlaylistImportSheet(route: route)
+            }
             .fileImporter(isPresented: active ? $router.showImporter : .constant(false),
                           allowedContentTypes: router.importKind.types,
                           allowsMultipleSelection: router.importKind.allowsMultiple) { result in

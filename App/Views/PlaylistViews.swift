@@ -15,6 +15,7 @@ struct PlaylistsListContent: View {
     @EnvironmentObject private var stats: StatsStore
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var player: Player
+    @EnvironmentObject private var importer: PlaylistImporter
     let query: String
 
     @State private var naming = false
@@ -44,6 +45,10 @@ struct PlaylistsListContent: View {
             .buttonStyle(.plain)
             Divider().padding(.leading, 98)
 
+            if let job = importer.job {
+                importRow(job)
+            }
+
             if query.isEmpty {
                 row(route: .favorites, name: "Favorite Songs", tracks: favoriteTracks, symbol: "star.fill")
                 row(route: .mostPlayed, name: "Most Played", tracks: stats.mostPlayed(limit: 4, in: library),
@@ -68,14 +73,18 @@ struct PlaylistsListContent: View {
                     }
             }
 
-            Button {
-                router.importPlaylist()
-            } label: {
-                Label("Import .m3u Playlist…", systemImage: "square.and.arrow.down")
-                    .font(.subheadline)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+            VStack(alignment: .leading, spacing: 0) {
+                importButton("Import from Spotify…", systemImage: ImportSource.spotify.systemImage) {
+                    router.importPlaylist(from: .spotify)
+                }
+                importButton("Import from Apple Music…", systemImage: ImportSource.appleMusic.systemImage) {
+                    router.importPlaylist(from: .appleMusic)
+                }
+                importButton("Import .m3u Playlist…", systemImage: "square.and.arrow.down") {
+                    router.importPlaylist()
+                }
             }
+            .padding(.vertical, 8)
         }
         .padding(.bottom, 24)
         .alert("New Playlist", isPresented: $naming) {
@@ -83,6 +92,52 @@ struct PlaylistsListContent: View {
             Button("Cancel", role: .cancel) {}
             Button("Create") { playlists.create(named: newName) }
         }
+    }
+
+    private func importButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+        }
+    }
+
+    /// The running (or last finished) Spotify / Apple Music import; opens its progress.
+    private func importRow(_ job: ImportJob) -> some View {
+        Button {
+            router.showImportProgress()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.secondary.opacity(0.15))
+                    if job.isRunning {
+                        ProgressView()
+                    } else {
+                        Image(systemName: job.notFoundCount > 0 ? "exclamationmark.circle" : "checkmark.circle")
+                            .font(.title2)
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.isRunning ? "Importing “\(job.name)”" : "Imported “\(job.name)”").lineLimit(1)
+                    Text(job.isRunning ? "\(job.doneCount) of \(job.songs.count) songs" : ImportProgressView.summary(job))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .bottom) { Divider().padding(.leading, 98) }
     }
 
     private func row(route: PlaylistRoute, name: String, tracks: [Track], symbol: String?, subtitle: String? = nil) -> some View {

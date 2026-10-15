@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SoulseekKit
 
@@ -111,6 +112,12 @@ final class SoulseekModel: ObservableObject {
     }
     /// Folders found but hidden by the filters.
     @Published private(set) var hiddenCount = 0
+    /// Set by the playlist importer while it works, so the app stays awake in the background
+    /// between downloads too (see TransferMonitor).
+    @Published var isImportingPlaylist = false
+    /// Every download update, after `downloads` has been updated (the playlist importer follows
+    /// its own downloads with this).
+    let downloadEvents = PassthroughSubject<DownloadUpdate, Never>()
 
     let client: SoulseekClient
     let library: LibraryStore
@@ -119,6 +126,8 @@ final class SoulseekModel: ObservableObject {
     weak var stats: StatsStore?
 
     private var searchToken: UInt32?
+    /// Searches made for someone else (the playlist importer), kept off the Search tab.
+    private var sideSearches: [UInt32: (SearchResponse) -> Void] = [:]
     private var trackSearchToken: UInt32?
     private var trackSearchTitle = ""
     private var responses: [SearchResponse] = []
@@ -202,6 +211,20 @@ final class SoulseekModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 25_000_000_000)
             self?.isFindingTrack = false
         }
+    }
+
+    /// A search whose results go to `onResponse` instead of the Search tab. Returns nil when not
+    /// logged in. Call `endSideSearch` when done listening.
+    func sideSearch(_ query: String, onResponse: @escaping (SearchResponse) -> Void) -> UInt32? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isLoggedIn else { return nil }
+        let token = client.search(trimmed)
+        sideSearches[token] = onResponse
+        return token
+    }
+
+    func endSideSearch(_ token: UInt32) {
+        sideSearches[token] = nil
     }
 
     private func addTrackCandidates(from response: SearchResponse) {
@@ -410,6 +433,10 @@ final class SoulseekModel: ObservableObject {
                 addTrackCandidates(from: response)
                 return
             }
+            if let handler = sideSearches[response.token] {
+                handler(response)
+                return
+            }
             guard response.token == searchToken else { return }
             pendingResponses.append(response)
             if !flushScheduled {
@@ -450,6 +477,7 @@ final class SoulseekModel: ObservableObject {
                     library.rescan()
                 }
             }
+            downloadEvents.send(update)
 
         case let .upload(update):
             if update.state == .completed, uploads.first(where: { $0.id == update.id })?.state != .completed {

@@ -41,9 +41,9 @@ final class TransferMonitor {
         }
 
         soulseek.$downloads
-            .combineLatest(soulseek.$uploads, player.$isPlaying)
+            .combineLatest(soulseek.$uploads, player.$isPlaying, soulseek.$isImportingPlaylist)
             .throttle(for: .seconds(1.5), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] _, _, _ in
+            .sink { [weak self] _, _, _, _ in
                 MainActor.assumeIsolated { self?.refresh() }
             }
             .store(in: &subscriptions)
@@ -71,7 +71,7 @@ final class TransferMonitor {
         let activeDownloads = downloads.filter { $0.isActive && !$0.isArtwork }
         let moving = activeDownloads.filter { $0.state == .transferring || $0.state == .starting }
         let sending = uploads.filter { $0.state == .transferring }
-        let busy = !activeDownloads.isEmpty || !sending.isEmpty
+        let busy = !activeDownloads.isEmpty || !sending.isEmpty || soulseek.isImportingPlaylist
         let seeding = isSeeding && soulseek.hasCredentials
 
         // Seeding: stay logged in even if the server or network dropped us.

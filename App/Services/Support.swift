@@ -96,6 +96,7 @@ enum AppSettings {
     static let transferActivityKey = "transferLiveActivity"
     static let showMissingKey = "showMissingSongs"
     static let musicBrainzKey = "musicBrainzLookup"
+    static let autoplayKey = "autoplay"
     /// These three default to off.
     static let bitPerfectKey = "bitPerfect"
     static let seedingKey = "seedingMode"

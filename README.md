@@ -4,12 +4,14 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 
 - **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, and import from Files or other apps.
 - **Playlists:** your own (reorder, rename, .m3u8 import/export), plus Favorite Songs and Most Played.
+- **Spotify and Apple Music import:** rebuild a Spotify playlist, your Liked Songs, or an Apple Music playlist from your library, downloading what's missing from Soulseek in the original order.
 - **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
-- **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, AirPlay, and the Liquid Glass mini player on iOS 26+.
+- **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
+- **Autoplay:** when the queue ends, similar songs from your library keep playing (Last.fm similar tracks and artists, else the same artist, most played or random), shown under Up Next.
 - **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
-- **Last.fm** scrobbling with your own API key.
+- **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
 
 Meant for sideloading. It won't pass App Store review.
 
@@ -19,6 +21,7 @@ Meant for sideloading. It won't pass App Store review.
 App/
   Library/                 scanning, metadata (incl. a small FLAC tag reader), albums, artwork, favourites
   Playback/                AVAudioEngine + EQ backend, AVPlayer spatial backend, queue
+  Import/                  Spotify and Apple Music playlist import (matching, Soulseek search, downloads)
   Services/                LRCLIB lyrics, Last.fm, keychain and settings
   Soulseek/                search results, downloads, cover fetching
   Views/                   SwiftUI screens
@@ -158,6 +161,30 @@ Settings › Wi-Fi Transfer, then open the address on a computer on the same net
 ### Last.fm
 
 Create an API account at [last.fm/api/account/create](https://www.last.fm/api/account/create) (any app name works). In Settings › Last.fm, enter the API key, shared secret, your username and password. The password is only used once to get a session key. Everything is stored in the Keychain. Scrobbles made offline are queued and sent later.
+
+### Autoplay
+
+On by default (Settings › Playback, or the ∞ button above the queue). When the queue ends, colon3 plays songs from your library: first those Last.fm lists as similar to the last song (`track.getSimilar`) or by similar artists (`artist.getSimilar`), which only need the API key from the Last.fm section. Without a key, or when none of Last.fm's picks are in your library, it falls back to more by the same artist, then your most played, then random. Songs played recently are skipped, and the next ten show under Up Next.
+
+### Importing from Spotify
+
+You need your own Spotify developer app. Since February 2026 the app's owner needs Spotify Premium.
+
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and choose **Create app**.
+2. Give it any name and description. Add the redirect URI `colon3://spotify-callback` exactly, under **Redirect URIs**, and click **Add**.
+3. Under **Which API/SDKs are you planning to use?**, tick **Web API**. Accept the terms and **Save**.
+4. Open the app's **Settings** and copy the **Client ID**. You don't need the client secret.
+5. In colon3, open **Settings › Spotify** or **Library › Playlists › Import from Spotify…**, paste the Client ID and tap **Log In with Spotify**.
+
+To log in with a Spotify account other than the app owner's, add it under **User Management** in the dashboard (apps created since February 2026 allow up to 5 users).
+
+Then pick a playlist or Liked Songs. Songs already in your library go straight into a new colon3 playlist. The rest are searched on Soulseek one at a time, ten seconds apart, and the best file is downloaded. "Best" means the title, artist and length match; lossless or high bitrate and peers with free slots are preferred; and live, remix, karaoke and similar versions are skipped unless the original is one. If a download fails or stalls for 3 minutes, the next-best file is tried. Songs that can't be found can be retried later.
+
+Spotify only shows development-mode apps the songs of playlists **you own or collaborate on**. Playlists you just follow, including Spotify's own, are listed but greyed out. A workaround is to copy one into a playlist of your own in Spotify first.
+
+### Importing from Apple Music
+
+Library › Playlists › Import from Apple Music… asks for access to your Music library and lists its playlists. They're matched and downloaded the same way. colon3 only reads song names; it can't copy Apple Music's own files.
 
 ## How it works (and what it can't do)
 

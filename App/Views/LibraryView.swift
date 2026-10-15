@@ -468,6 +468,16 @@ struct LibraryView: View {
                     Label("Import Playlist (.m3u)…", systemImage: "music.note.list")
                 }
                 Button {
+                    router.importPlaylist(from: .spotify)
+                } label: {
+                    Label("Import from Spotify…", systemImage: ImportSource.spotify.systemImage)
+                }
+                Button {
+                    router.importPlaylist(from: .appleMusic)
+                } label: {
+                    Label("Import from Apple Music…", systemImage: ImportSource.appleMusic.systemImage)
+                }
+                Button {
                     router.tab = .settings
                     router.showWiFiTransfer = true
                 } label: {

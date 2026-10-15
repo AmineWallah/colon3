@@ -68,6 +68,13 @@ final class PlaylistStore: ObservableObject {
         return added
     }
 
+    /// Replaces the whole song list (the playlist importer fills its playlist this way, in the
+    /// source's order). Does nothing if the playlist was deleted.
+    func setTrackIDs(_ ids: [String], for playlistID: UUID) {
+        guard let playlist = playlist(id: playlistID), playlist.trackIDs != ids else { return }
+        edit(playlist) { $0.trackIDs = ids }
+    }
+
     /// Offsets refer to the resolved (existing) track list shown on screen.
     func remove(at offsets: IndexSet, from playlist: Playlist, library: LibraryStore) {
         let visible = visibleIndices(of: playlist, library: library)

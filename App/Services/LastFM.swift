@@ -169,3 +169,83 @@ final class LastFM: ObservableObject, Scrobbler {
         return json
     }
 }
+
+// MARK: - Similar tracks and artists (autoplay)
+
+struct LastFMSimilarTrack {
+    let title: String
+    let artist: String
+    let match: Double
+}
+
+struct LastFMSimilarArtist {
+    let name: String
+    let match: Double
+}
+
+extension LastFM {
+    /// The saved API key. track.getSimilar and artist.getSimilar only need this, not a session.
+    static var publicAPIKey: String? {
+        guard let key = Keychain.load(account: "apiKey", service: service), !key.isEmpty else { return nil }
+        return key
+    }
+
+    static func similarTracks(artist: String, track: String, apiKey: String) async throws -> [LastFMSimilarTrack] {
+        let json = try await publicCall(method: "track.getSimilar",
+                                        parameters: ["artist": artist, "track": track, "limit": "100", "autocorrect": "1"],
+                                        apiKey: apiKey)
+        let container = json["similartracks"] as? [String: Any]
+        return list(container?["track"]).compactMap { entry -> LastFMSimilarTrack? in
+            guard let title = entry["name"] as? String,
+                  let artist = (entry["artist"] as? [String: Any])?["name"] as? String else { return nil }
+            return LastFMSimilarTrack(title: title, artist: artist, match: number(entry["match"]))
+        }
+    }
+
+    static func similarArtists(artist: String, apiKey: String) async throws -> [LastFMSimilarArtist] {
+        let json = try await publicCall(method: "artist.getSimilar",
+                                        parameters: ["artist": artist, "limit": "50", "autocorrect": "1"],
+                                        apiKey: apiKey)
+        let container = json["similarartists"] as? [String: Any]
+        return list(container?["artist"]).compactMap { entry -> LastFMSimilarArtist? in
+            guard let name = entry["name"] as? String else { return nil }
+            return LastFMSimilarArtist(name: name, match: number(entry["match"]))
+        }
+    }
+
+    /// Unsigned read-only GET.
+    private static func publicCall(method: String, parameters: [String: String], apiKey: String) async throws -> [String: Any] {
+        var components = URLComponents(string: "https://ws.audioscrobbler.com/2.0/")!
+        let all = parameters.merging(["method": method, "api_key": apiKey, "format": "json"]) { first, _ in first }
+        components.queryItems = all.map { URLQueryItem(name: $0.key, value: $0.value) }
+        // URLComponents leaves "+" alone, which Last.fm would read as a space.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        guard let url = components.url else { throw LastFMError.message("Bad Last.fm request") }
+        var request = URLRequest(url: url)
+        request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
+        let (data, _) = try await URLSession.shared.data(for: request)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LastFMError.message("Unexpected reply from Last.fm")
+        }
+        if let message = json["message"] as? String, json["error"] != nil {
+            throw LastFMError.message(message)
+        }
+        return json
+    }
+
+    /// Last.fm sends a lone object instead of a one-element array.
+    private static func list(_ value: Any?) -> [[String: Any]] {
+        if let array = value as? [[String: Any]] { return array }
+        if let single = value as? [String: Any] { return [single] }
+        return []
+    }
+
+    /// "match" is a number in some replies and a string in others.
+    private static func number(_ value: Any?) -> Double {
+        if let double = value as? Double { return double }
+        if let string = value as? String { return Double(string) ?? 0 }
+        if let int = value as? Int { return Double(int) }
+        return 0
+    }
+}

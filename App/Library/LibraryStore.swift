@@ -14,6 +14,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var isImporting = false
     /// Bumped when cover art may have changed, so artwork views reload.
     @Published private(set) var artworkRevision = 0
+    /// Bumped after every scan, so lookup tables built from `tracks` know when to rebuild.
+    private(set) var scanRevision = 0
 
     let root: URL
     var onSharesChanged: (([LocalShare]) -> Void)?
@@ -149,6 +151,7 @@ final class LibraryStore: ObservableObject {
             for track in album.tracks { byTrack[track.id] = album }
         }
         albumByTrack = byTrack
+        scanRevision += 1
         isScanning = false
         onSharesChanged?(result.shares)
         // New folders may have brought cover files; let artwork views look again.

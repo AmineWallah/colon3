@@ -36,6 +36,7 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Autoplay", isOn: $player.autoplay)
                     NavigationLink {
                         EqualizerView(equalizer: player.equalizer)
                     } label: {
@@ -49,7 +50,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("For USB DACs: switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
+                    Text("Autoplay keeps playing songs from your library when the queue ends: ones Last.fm calls similar (if you've added a Last.fm API key below), else more by the same artist, your most played, or anything. Recently played songs are skipped.\n\nBit-Perfect Mode is for USB DACs: it switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
                 }
 
                 Section {
@@ -91,6 +92,8 @@ struct SettingsView: View {
                 }
 
                 LastFMSection(scrobbling: $scrobbling)
+
+                SpotifyAccountSection()
 
                 Section {
                     LabeledContent("Songs", value: "\(library.tracks.count)")

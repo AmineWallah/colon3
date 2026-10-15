@@ -74,6 +74,8 @@ final class AppRouter: ObservableObject {
     /// Bumped when local lyrics change so the lyrics view reloads.
     @Published private(set) var lyricsRevision = 0
     @Published var pendingSearch: String?
+    /// The Spotify / Apple Music import sheet.
+    @Published var playlistImport: ImportSheetRoute?
 
     init() {
         tab = UserDefaults.standard.string(forKey: "selectedTab").flatMap(AppTab.init(rawValue:)) ?? .library
@@ -93,6 +95,9 @@ final class AppRouter: ObservableObject {
     }
 
     func lyricsChanged() { lyricsRevision += 1 }
+
+    func importPlaylist(from source: ImportSource) { playlistImport = .pick(source) }
+    func showImportProgress() { playlistImport = .progress }
 
     private func presentImporter(_ kind: ImportKind) {
         importKind = kind

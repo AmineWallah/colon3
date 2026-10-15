@@ -32,7 +32,20 @@ final class Player: ObservableObject {
     @Published private(set) var artwork: UIImage?
     @Published private(set) var isSpatialPlayback = false
     @Published private(set) var shuffle = false
-    @Published var repeatMode: RepeatMode = .off
+    @Published var repeatMode: RepeatMode = .off {
+        didSet { if repeatMode != oldValue { refreshAutoplay() } }
+    }
+    /// Keep playing similar songs from the library when the queue runs out. Saved in Settings.
+    @Published var autoplay: Bool {
+        didSet {
+            UserDefaults.standard.set(autoplay, forKey: AppSettings.autoplayKey)
+            if autoplay != oldValue { refreshAutoplay() }
+        }
+    }
+    /// What autoplay will play after the queue, shown under Up Next. Not part of `queue` until
+    /// each song's turn comes, so editing the queue never mixes the two up.
+    @Published private(set) var autoplayUpcoming: [Track] = []
+    @Published private(set) var isFindingAutoplay = false
     /// Bit-perfect mode for USB DACs (see EngineBackend). Saved in Settings.
     @Published var bitPerfect: Bool {
         didSet {
@@ -65,9 +78,13 @@ final class Player: ObservableObject {
     var upNext: ArraySlice<Track> { queue.indices.contains(index) ? queue[(index + 1)...] : [] }
 
     let equalizer: Equalizer
-    weak var library: LibraryStore?
+    weak var library: LibraryStore? {
+        didSet { recommender.library = library }
+    }
     weak var scrobbler: Scrobbler?
-    weak var stats: StatsStore?
+    weak var stats: StatsStore? {
+        didSet { recommender.stats = stats }
+    }
 
     private let engine: EngineBackend
     private let avPlayer: AVPlayerBackend
@@ -75,6 +92,16 @@ final class Player: ObservableObject {
     private var unshuffledQueue: [Track] = []
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
+
+    private let recommender = AutoplayRecommender()
+    /// The song autoplay's current list follows on from (the end of the queue when it was made).
+    private var autoplaySeedID: String?
+    private var autoplayTask: Task<Void, Never>?
+    /// The queue ended before autoplay had anything ready; start as soon as it does.
+    private var advanceWhenAutoplayReady = false
+    /// Recently played ids, oldest first, kept across launches so autoplay doesn't repeat them.
+    private var recentlyPlayed: [String]
+    private static let recentLimit = 200
 
     // Scrobbling: count real listening time, not position, so seeking doesn't cheat.
     private var listened: Double = 0
@@ -90,6 +117,8 @@ final class Player: ObservableObject {
         bitPerfect = UserDefaults.standard.bool(forKey: AppSettings.bitPerfectKey)
         let savedRate = UserDefaults.standard.object(forKey: "playback.rate") as? Float ?? 1
         playbackRate = min(max(savedRate, Self.rateRange.lowerBound), Self.rateRange.upperBound)
+        autoplay = AppSettings.flag(AppSettings.autoplayKey)
+        recentlyPlayed = UserDefaults.standard.stringArray(forKey: "autoplay.recent") ?? []
         engine.bitPerfect = bitPerfect
         engine.rate = playbackRate
         avPlayer.rate = playbackRate
@@ -147,6 +176,7 @@ final class Player: ObservableObject {
         if queue.isEmpty { return play(tracks) }
         queue.insert(contentsOf: tracks, at: index + 1)
         unshuffledQueue += tracks
+        refreshAutoplay()
     }
 
     func addToQueue(_ tracks: [Track]) {
@@ -154,6 +184,7 @@ final class Player: ObservableObject {
         if queue.isEmpty { return play(tracks) }
         queue += tracks
         unshuffledQueue += tracks
+        refreshAutoplay()
     }
 
     func jump(to queueIndex: Int) {
@@ -170,12 +201,14 @@ final class Player: ObservableObject {
         for track in removed {
             if let position = unshuffledQueue.firstIndex(of: track) { unshuffledQueue.remove(at: position) }
         }
+        refreshAutoplay()
     }
 
     func moveInQueue(from offsets: IndexSet, to destination: Int) {
         var upcoming = Array(upNext)
         upcoming.move(fromOffsets: offsets, toOffset: destination)
         queue = Array(queue[...index]) + upcoming
+        refreshAutoplay()
     }
 
     func toggleShuffle() {
@@ -195,6 +228,7 @@ final class Player: ObservableObject {
             index = 0
             shuffle = true
         }
+        refreshAutoplay()
     }
 
     func cycleRepeat() {
@@ -209,13 +243,117 @@ final class Player: ObservableObject {
         let before = queue[..<min(index, queue.count)].filter { doomed.contains($0.id) }.count
         queue.removeAll { doomed.contains($0.id) }
         unshuffledQueue.removeAll { doomed.contains($0.id) }
+        autoplayUpcoming.removeAll { doomed.contains($0.id) }
         index = max(0, index - before)
         if queue.isEmpty {
             stop()
         } else if wasCurrent {
             index = min(index, queue.count - 1)
             loadCurrent(autoplay: isPlaying)
+        } else {
+            refreshAutoplay()
         }
+    }
+
+    // MARK: Autoplay
+
+    /// Plays an autoplay song now. Past the end of the queue the songs before it are skipped;
+    /// with songs still queued it plays next-up and the rest of the queue follows.
+    func playAutoplay(at offset: Int) {
+        guard autoplayUpcoming.indices.contains(offset) else { return }
+        let track = autoplayUpcoming.remove(at: offset)
+        if upNext.isEmpty {
+            autoplayUpcoming.removeFirst(offset)
+            queue.append(track)
+            unshuffledQueue.append(track)
+            // What's left of the list follows on from this song. A fetch for the old end of the
+            // queue would be thrown away when it lands, so stop it; loadCurrent tops up again.
+            autoplaySeedID = track.id
+            autoplayTask?.cancel()
+            autoplayTask = nil
+            isFindingAutoplay = false
+            index = queue.count - 1
+        } else {
+            queue.insert(track, at: index + 1)
+            unshuffledQueue.append(track)
+            index += 1
+        }
+        loadCurrent(autoplay: true)
+    }
+
+    func removeAutoplay(at offsets: IndexSet) {
+        autoplayUpcoming.remove(atOffsets: offsets)
+        refreshAutoplay()
+    }
+
+    /// Keeps the autoplay list in step with the queue: rebuilt when the queue's last song changes,
+    /// topped up when it runs low, cleared when autoplay can't apply (off, repeat, nothing queued).
+    private func refreshAutoplay() {
+        guard autoplay, repeatMode == .off, let seed = queue.last else {
+            autoplayTask?.cancel()
+            autoplayTask = nil
+            autoplaySeedID = nil
+            advanceWhenAutoplayReady = false
+            if !autoplayUpcoming.isEmpty { autoplayUpcoming = [] }
+            if isFindingAutoplay { isFindingAutoplay = false }
+            return
+        }
+        if seed.id != autoplaySeedID {
+            autoplaySeedID = seed.id
+            autoplayUpcoming = []
+            fetchAutoplay(after: seed)
+        } else if autoplayUpcoming.count < 4, autoplayTask == nil {
+            fetchAutoplay(after: autoplayUpcoming.last ?? seed)
+        }
+    }
+
+    private func fetchAutoplay(after seed: Track) {
+        autoplayTask?.cancel()
+        let seedID = autoplaySeedID
+        let wanted = max(10 - autoplayUpcoming.count, 1)
+        isFindingAutoplay = true
+        autoplayTask = Task { [weak self] in
+            guard let self else { return }
+            var picks = await self.recommender.recommendations(after: seed, count: wanted,
+                                                               excluding: self.autoplayExclusions(strict: true))
+            guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
+            if picks.isEmpty {
+                // Small library: everything was played recently. Repeat rather than stop.
+                picks = await self.recommender.recommendations(after: seed, count: wanted,
+                                                               excluding: self.autoplayExclusions(strict: false))
+                guard !Task.isCancelled, self.autoplaySeedID == seedID else { return }
+            }
+            let present = Set(self.autoplayUpcoming.map(\.id))
+            self.autoplayUpcoming += picks.filter { !present.contains($0.id) }
+            self.autoplayTask = nil
+            self.isFindingAutoplay = false
+            if self.advanceWhenAutoplayReady {
+                self.advanceWhenAutoplayReady = false
+                if self.upNext.isEmpty, !self.autoplayUpcoming.isEmpty { self.playAutoplay(at: 0) }
+            }
+        }
+    }
+
+    /// Songs autoplay shouldn't pick: what's queued or already lined up, and (when strict) what
+    /// was played recently. The recent window shrinks with small libraries so there's always
+    /// something left to choose from.
+    private func autoplayExclusions(strict: Bool) -> Set<String> {
+        var ids = Set(autoplayUpcoming.map(\.id))
+        if strict {
+            ids.formUnion(queue.map(\.id))
+            let window = min(recentlyPlayed.count, Self.recentLimit, (library?.tracks.count ?? 0) / 2)
+            ids.formUnion(recentlyPlayed.suffix(window))
+        } else {
+            ids.formUnion(queue.suffix(3).map(\.id))
+        }
+        return ids
+    }
+
+    private func notePlayed(_ track: Track) {
+        recentlyPlayed.removeAll { $0 == track.id }
+        recentlyPlayed.append(track.id)
+        if recentlyPlayed.count > Self.recentLimit { recentlyPlayed.removeFirst(recentlyPlayed.count - Self.recentLimit) }
+        UserDefaults.standard.set(recentlyPlayed, forKey: "autoplay.recent")
     }
 
     // MARK: Transport
@@ -226,6 +364,7 @@ final class Player: ObservableObject {
 
     func resume() {
         guard let backend, current != nil else { return }
+        advanceWhenAutoplayReady = false
         let session = AVAudioSession.sharedInstance()
         // The background keeper may have switched the session to mix-with-others; take it back.
         try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
@@ -251,6 +390,15 @@ final class Player: ObservableObject {
         } else if repeatMode == .all, !queue.isEmpty {
             index = 0
             loadCurrent(autoplay: true)
+        } else if autoplay, repeatMode == .off, current != nil {
+            if !autoplayUpcoming.isEmpty {
+                playAutoplay(at: 0)
+            } else {
+                pause()
+                seek(to: 0)
+                advanceWhenAutoplayReady = true
+                refreshAutoplay()
+            }
         } else {
             pause()
             seek(to: 0)
@@ -277,6 +425,7 @@ final class Player: ObservableObject {
         backend = nil
         queue = []
         unshuffledQueue = []
+        refreshAutoplay()
         index = 0
         isPlaying = false
         clock.position = 0
@@ -314,6 +463,8 @@ final class Player: ObservableObject {
         scrobbled = false
         countedPlay = false
         artwork = nil
+        advanceWhenAutoplayReady = false
+        notePlayed(track)
         refreshOutputInfo()
 
         if autoplay {
@@ -325,6 +476,7 @@ final class Player: ObservableObject {
         scrobbler?.nowPlaying(track)
 
         reloadArtwork()
+        refreshAutoplay()
     }
 
     /// Reloads the current cover (after a new one was downloaded or picked).
