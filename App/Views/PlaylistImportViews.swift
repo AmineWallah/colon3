@@ -14,7 +14,7 @@ enum ImportSheetRoute: Identifiable, Equatable {
     }
 }
 
-/// Import from Spotify or Apple Music: choose a playlist, then follow the import.
+/// Import from Spotify, Apple Music or YouTube Music: choose a playlist, then follow the import.
 struct PlaylistImportSheet: View {
     let route: ImportSheetRoute
 
@@ -41,6 +41,7 @@ struct PlaylistImportSheet: View {
                     switch source {
                     case .spotify: SpotifyImportPicker { showingProgress = true }
                     case .appleMusic: AppleMusicImportPicker { showingProgress = true }
+                    case .youTubeMusic: YouTubeMusicImportPicker { showingProgress = true }
                     }
                 }
             }
@@ -303,6 +304,105 @@ struct SpotifyAccountSection: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+// MARK: - YouTube Music
+
+/// Paste a playlist link; no account or key. Public and unlisted playlists only.
+struct YouTubeMusicImportPicker: View {
+    let onStart: () -> Void
+
+    @EnvironmentObject private var importer: PlaylistImporter
+    @State private var link = ""
+    @State private var reading: Int?
+    @State private var error: String?
+    @State private var pending: PendingYouTubeImport?
+
+    private struct PendingYouTubeImport: Identifiable {
+        let playlistID: String
+        let playlist: YouTubePlaylistReader.Playlist
+        var id: String { playlistID }
+    }
+
+    var body: some View {
+        List {
+            RunningImportBanner(onShow: onStart)
+            Section {
+                TextField("Playlist link", text: $link, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .lineLimit(1...3)
+                if link.isEmpty {
+                    // PasteButton reads the clipboard only when tapped, so iOS doesn't ask.
+                    PasteButton(payloadType: String.self) { strings in
+                        guard let first = strings.first else { return }
+                        Task { @MainActor in link = first }
+                    }
+                    .buttonBorderShape(.capsule)
+                }
+                Button {
+                    Task { await read() }
+                } label: {
+                    if let reading {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(reading > 0 ? "Reading songs… \(reading)" : "Opening playlist…")
+                        }
+                    } else {
+                        Text("Read Playlist")
+                    }
+                }
+                .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty || importer.isRunning || reading != nil)
+            } footer: {
+                Text("Paste a playlist link from YouTube Music or YouTube (Share › Copy link). It has to be Public or Unlisted: Liked Music and private playlists can't be read, so put those songs in a playlist and set it to Unlisted first.")
+            }
+            if let error {
+                Section {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Import from YouTube Music")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(pending.map { "Import \u{201C}\($0.playlist.title)\u{201D}?" } ?? "",
+                            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+                            titleVisibility: .visible, presenting: pending) { item in
+            Button("Import \(item.playlist.songs.count) Songs") { start(item) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Songs not in your library are downloaded from Soulseek into a new playlist. Large playlists take a while; you can close this and check back from Library › Playlists.")
+        }
+    }
+
+    private func read() async {
+        guard let id = YouTubePlaylistReader.playlistID(fromLink: link) else {
+            error = "That doesn't look like a playlist link. It should contain \u{201C}list=\u{201D}."
+            return
+        }
+        error = nil
+        reading = 0
+        defer { reading = nil }
+        do {
+            let playlist = try await YouTubePlaylistReader.read(playlistID: id) { count in
+                reading = count
+            }
+            guard !playlist.songs.isEmpty else {
+                error = "No songs found in \u{201C}\(playlist.title)\u{201D}."
+                return
+            }
+            pending = PendingYouTubeImport(playlistID: id, playlist: playlist)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func start(_ item: PendingYouTubeImport) {
+        link = ""
+        importer.start(name: item.playlist.title, source: .youTubeMusic, sourceKey: "youtube:" + item.playlistID,
+                       songs: item.playlist.songs)
+        onStart()
     }
 }
 

@@ -1,7 +1,7 @@
 import Foundation
 
 enum ImportSource: String, Identifiable, CaseIterable {
-    case spotify, appleMusic
+    case spotify, appleMusic, youTubeMusic
 
     var id: String { rawValue }
 
@@ -9,6 +9,7 @@ enum ImportSource: String, Identifiable, CaseIterable {
         switch self {
         case .spotify: return "Spotify"
         case .appleMusic: return "Apple Music"
+        case .youTubeMusic: return "YouTube Music"
         }
     }
 
@@ -16,6 +17,7 @@ enum ImportSource: String, Identifiable, CaseIterable {
         switch self {
         case .spotify: return "dot.radiowaves.up.forward"
         case .appleMusic: return "music.note"
+        case .youTubeMusic: return "play.circle"
         }
     }
 }

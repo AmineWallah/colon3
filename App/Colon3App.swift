@@ -16,6 +16,7 @@ struct Colon3App: App {
     @StateObject private var appleMusic = AppleMusicLibrary()
     @StateObject private var playlists: PlaylistStore
     @StateObject private var importer: PlaylistImporter
+    @StateObject private var trending: TrendingStore
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
 
@@ -40,6 +41,7 @@ struct Colon3App: App {
         let playlists = PlaylistStore()
         let fetcher = SongFetcher(soulseek: soulseek, library: library)
         let importer = PlaylistImporter(soulseek: soulseek, library: library, playlists: playlists, fetcher: fetcher)
+        let trending = TrendingStore(fetcher: fetcher, library: library)
         player.fetcher = fetcher
         player.onAutoplayDownload = { [weak playlists] track in playlists?.addToAutoplayDiscoveries(track) }
         let wifi = WiFiTransferServer(root: library.root)
@@ -54,6 +56,7 @@ struct Colon3App: App {
         _wifi = StateObject(wrappedValue: wifi)
         _playlists = StateObject(wrappedValue: playlists)
         _importer = StateObject(wrappedValue: importer)
+        _trending = StateObject(wrappedValue: trending)
     }
 
     var body: some Scene {
@@ -74,6 +77,7 @@ struct Colon3App: App {
                 .environmentObject(spotify)
                 .environmentObject(appleMusic)
                 .environmentObject(importer)
+                .environmentObject(trending)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()

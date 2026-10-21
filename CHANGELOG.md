@@ -3,6 +3,15 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
+## 1.1.0
+
+### New
+- **Trending:** a new first tab with today's most played songs on Apple Music for any country, with cover art. Songs you have play with a tap; the rest have a download button that finds them on Soulseek.
+- **Import from YouTube Music:** paste a link to any public or unlisted playlist from YouTube Music or YouTube; no account or setup. Songs are matched and downloaded the same way as Spotify and Apple Music imports.
+
+### Changed
+- **Software Update:** the update button now opens the release on GitHub (the latest release on Stable, the releases list on Beta). The over-the-air install page is still there as a second button.
+
 ## 1.0.0
 
 ### New

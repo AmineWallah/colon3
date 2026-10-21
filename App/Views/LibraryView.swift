@@ -478,6 +478,11 @@ struct LibraryView: View {
                     Label("Import from Apple Music…", systemImage: ImportSource.appleMusic.systemImage)
                 }
                 Button {
+                    router.importPlaylist(from: .youTubeMusic)
+                } label: {
+                    Label("Import from YouTube Music…", systemImage: ImportSource.youTubeMusic.systemImage)
+                }
+                Button {
                     router.tab = .settings
                     router.showWiFiTransfer = true
                 } label: {

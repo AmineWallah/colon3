@@ -80,6 +80,9 @@ struct PlaylistsListContent: View {
                 importButton("Import from Apple Music…", systemImage: ImportSource.appleMusic.systemImage) {
                     router.importPlaylist(from: .appleMusic)
                 }
+                importButton("Import from YouTube Music…", systemImage: ImportSource.youTubeMusic.systemImage) {
+                    router.importPlaylist(from: .youTubeMusic)
+                }
                 importButton("Import .m3u Playlist…", systemImage: "square.and.arrow.down") {
                     router.importPlaylist()
                 }

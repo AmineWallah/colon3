@@ -248,7 +248,7 @@ struct SoftwareUpdateSection: View {
         } header: {
             Text("Software Update")
         } footer: {
-            Text("Beta follows the beta branch, Stable follows main. Updates come from \(updates.source). Installing keeps your music and settings; colon3 closes while iOS installs it.")
+            Text("Beta follows the beta branch, Stable follows main. Get Update opens \(updates.channel == .stable ? "the latest release" : "the releases list") on GitHub, with the IPA for SideStore or any signer; Install from Install Page uses \(updates.source). Installing keeps your music and settings.")
         }
     }
 
@@ -290,15 +290,15 @@ struct SoftwareUpdateSection: View {
             }
             .padding(.vertical, 4)
             Button {
-                updates.install(remote)
+                updates.openReleases()
             } label: {
-                Text("Install Update")
+                Text("Get Update on GitHub")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .listRowSeparator(.hidden)
-            Button("Open Install Page") { updates.openPage() }
+            Button("Install from Install Page") { updates.install(remote) }
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
         }

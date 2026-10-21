@@ -4,7 +4,8 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 
 - **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, and import from Files or other apps.
 - **Playlists:** your own (reorder, rename, .m3u8 import/export), plus Favorite Songs and Most Played.
-- **Spotify and Apple Music import:** rebuild a Spotify playlist, your Liked Songs, or an Apple Music playlist from your library, downloading what's missing from Soulseek in the original order.
+- **Trending:** today's Apple Music top 100 for any country, with one-tap downloads from Soulseek.
+- **Spotify, Apple Music and YouTube Music import:** rebuild a Spotify playlist or your Liked Songs, an Apple Music playlist, or a YouTube Music playlist link from your library, downloading what's missing from Soulseek in the original order.
 - **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
 - **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
 - **Autoplay:** when the queue ends, similar songs keep playing (Last.fm similar tracks and artists, else the same artist, most played or random). Picks you don't have get a Download button (or download on their own, if you turn that on) and play once they're downloaded from Soulseek.
@@ -21,7 +22,7 @@ Meant for sideloading. It won't pass App Store review.
 App/
   Library/                 scanning, metadata (incl. a small FLAC tag reader), albums, artwork, favourites
   Playback/                AVAudioEngine + EQ backend, AVPlayer spatial backend, queue
-  Import/                  Spotify and Apple Music playlist import (matching, Soulseek search, downloads)
+  Import/                  Spotify, Apple Music and YouTube Music playlist import
   Services/                LRCLIB lyrics, Last.fm, keychain and settings
   Soulseek/                search results, downloads, cover fetching
   Views/                   SwiftUI screens
@@ -144,11 +145,11 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
 
 ### Software Update
 
-Settings › Software Update compares the installed build with `version.json`, which CI publishes next to the install page on every signed build. **Install Update** opens the over-the-air install prompt; the music library and settings are kept. The Settings tab shows a badge when an update is waiting.
+Settings › Software Update compares the installed build with `version.json`, which CI publishes next to the install page on every signed build. **Get Update on GitHub** opens the [latest release](https://github.com/AmineWallah/colon3/releases/latest) on Stable, or the [releases list](https://github.com/AmineWallah/colon3/releases) on Beta, with the IPA for SideStore or any signer. **Install from Install Page** opens the over-the-air install prompt instead. Either way the music library and settings are kept. The Settings tab shows a badge when an update is waiting.
 
 ### Links
 
-`colon3://player`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.
+`colon3://player`, `colon3://trending`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.
 
 ### Bit-perfect mode
 
@@ -187,6 +188,20 @@ To log in with a Spotify account other than the app owner's, add it under **User
 Then pick a playlist or Liked Songs. Songs already in your library go straight into a new colon3 playlist. The rest are searched on Soulseek one at a time, ten seconds apart, and the best file is downloaded. "Best" means the title, artist and length match; lossless or high bitrate and peers with free slots are preferred; and live, remix, karaoke and similar versions are skipped unless the original is one. If a download fails or stalls for 3 minutes, the next-best file is tried. Songs that can't be found can be retried later.
 
 Spotify only shows development-mode apps the songs of playlists **you own or collaborate on**. Playlists you just follow, including Spotify's own, are listed but greyed out. A workaround is to copy one into a playlist of your own in Spotify first.
+
+### Trending
+
+The first tab shows today's 100 most played songs on Apple Music for a country (the globe button picks it; it starts on your region). The chart comes from Apple's public feed at `rss.marketingtools.apple.com`, needs no key, and updates daily. A tick means the song is in your library: tap it to play, with the chart's other songs you have queued after it. Otherwise the download button finds it on Soulseek through the same search queue and matching as imports and autoplay. Downloads keep going if you leave the tab.
+
+Spotify can't be used for this: since February 2026, development-mode apps can't read Spotify's browse endpoints or its own Top 50 playlists.
+
+### Importing from YouTube Music
+
+Library › Playlists › Import from YouTube Music…, then paste a playlist link from YouTube Music or YouTube (Share › Copy link). No account, API key or setup is needed.
+
+- **Public or Unlisted playlists only.** Liked Music and private playlists can't be read from a link. Put those songs in a playlist, set it to Unlisted, and paste its link.
+- **How it reads them:** colon3 loads the playlist's youtube.com page, which carries the first 100 songs, and fetches the rest the way the website does when you scroll. This isn't an official API: if YouTube changes its pages, import stops working until colon3 is updated. (In 2026 YouTube moved playlist items to a new layout; both the old and the new one are read.)
+- **Titles:** YouTube Music tracks (from "Artist - Topic" channels) give the artist and the song's exact length. For music videos, "Artist - Song (Official Video)" is split into artist and song, and the video's length isn't used, since intros and outros make it differ from the song.
 
 ### Importing from Apple Music
 

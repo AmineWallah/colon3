@@ -43,9 +43,16 @@ final class UpdateChecker: ObservableObject {
         var label: String { self == .stable ? "Stable" : "Beta" }
         /// Stable lives at the root of the install site, beta under /beta/.
         var path: String { self == .stable ? "" : "beta/" }
+
+        /// Where the update button sends you. Stable goes straight to the newest release; beta
+        /// goes to the list, where pre-releases are at the top.
+        var releasesURL: URL {
+            URL(string: UpdateChecker.repository + (self == .stable ? "/releases/latest" : "/releases"))!
+        }
     }
 
     static let siteRoot = "https://aminewallah.github.io/colon3/"
+    nonisolated static let repository = "https://github.com/AmineWallah/colon3"
 
     @Published private(set) var state: State = .idle
     @Published private(set) var lastChecked: Date?
@@ -114,10 +121,15 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
-    /// Opens the OTA install prompt; falls back to the install page in Safari.
+    /// The update button: the channel's GitHub Releases page, with the IPA to download.
+    func openReleases() {
+        UIApplication.shared.open(channel.releasesURL)
+    }
+
+    /// Opens the OTA install prompt on the channel's install page (the secondary button).
     /// iOS only lets Safari start an over-the-air install (an app can't open itms-services:
-    /// links itself), so this opens the channel's install page with ?install=1, which makes the
-    /// page show the iOS install prompt straight away.
+    /// links itself), so this opens the install page with ?install=1, which makes the page show
+    /// the iOS install prompt straight away.
     func install(_ remote: Remote) {
         var page = remote.page ?? source
         if !page.hasSuffix("/") { page += "/" }

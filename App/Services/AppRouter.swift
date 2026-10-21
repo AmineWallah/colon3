@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum AppTab: String, Hashable {
-    case library, search, downloads, settings
+    case trending, library, search, downloads, settings
 }
 
 /// Whose cover a picked image replaces.
@@ -104,7 +104,7 @@ final class AppRouter: ObservableObject {
         showImporter = true
     }
 
-    /// colon3://player, colon3://downloads, colon3://library, colon3://search?q=…, colon3://wifi
+    /// colon3://player, colon3://trending, colon3://downloads, colon3://library, colon3://search?q=…, colon3://wifi
     func handle(_ url: URL) {
         switch url.host?.lowercased() {
         case "player", "nowplaying":
@@ -115,6 +115,9 @@ final class AppRouter: ObservableObject {
         case "library":
             showPlayer = false
             tab = .library
+        case "trending", "charts":
+            showPlayer = false
+            tab = .trending
         case "search":
             showPlayer = false
             tab = .search
