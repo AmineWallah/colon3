@@ -90,6 +90,7 @@ final class TrendingStore: ObservableObject {
             UserDefaults.standard.set(country, forKey: "trending.country")
             entries = []
             albums = []
+            staleNote = nil
             Task { await load(force: true) }
         }
     }
@@ -100,6 +101,9 @@ final class TrendingStore: ObservableObject {
     @Published private(set) var updated: Date?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
+    /// Set when the charts on screen are older than they should be: Apple's server didn't
+    /// answer, so the last ones that loaded are shown.
+    @Published private(set) var staleNote: String?
     /// Downloads started from the chart, by entry ID.
     @Published private(set) var fetches: [String: Fetch] = [:]
 
@@ -148,8 +152,9 @@ final class TrendingStore: ObservableObject {
             // Albums are a bonus: the page still works if only the songs chart loads.
             async let songsFeed = Self.fetchFeed(country: wanted, kind: "songs")
             async let albumsFeed = try? Self.fetchFeed(country: wanted, kind: "albums")
-            let (songResults, date) = try await songsFeed
-            let albumResults = (await albumsFeed)?.0 ?? []
+            let songs = try await songsFeed
+            let songResults = songs.results
+            let albumResults = (await albumsFeed)?.results ?? []
             guard token == loadToken else { return }  // A newer load (another country) takes over.
             entries = songResults.enumerated().map { offset, result in
                 ChartEntry(id: result.id, rank: offset + 1, title: result.name, artist: result.artistName,
@@ -163,15 +168,29 @@ final class TrendingStore: ObservableObject {
                            appleMusicURL: result.url.flatMap { URL(string: $0) },
                            releaseDate: Self.day(result.releaseDate))
             }
-            updated = date
-            loadedAt = Date()
+            updated = songs.updated
             loadedCountry = wanted
             error = nil
+            if songs.cached {
+                // Try again sooner than the usual hour.
+                loadedAt = Date().addingTimeInterval(-3000)
+                staleNote = "Apple's chart server isn't answering, so these are the charts from "
+                    + (songs.updated.map { $0.formatted(.relative(presentation: .named)) } ?? "earlier")
+                    + ". Pull down to try again."
+            } else {
+                loadedAt = Date()
+                staleNote = nil
+            }
         } catch {
             guard token == loadToken else { return }
             // Leaving the tab cancels the load; that isn't worth an error screen.
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription
+                // Charts already on screen stay; say why they didn't refresh.
+                if !entries.isEmpty, loadedCountry == wanted {
+                    staleNote = error.localizedDescription + " Showing the charts from "
+                        + (updated.map { $0.formatted(.relative(presentation: .named)) } ?? "earlier") + "."
+                }
             }
         }
         isLoading = false
@@ -202,24 +221,67 @@ final class TrendingStore: ObservableObject {
         }
     }
 
-    /// "songs" or "albums": the 100 most played for the country.
-    nonisolated private static func fetchFeed(country: String, kind: String) async throws -> ([Feed.Result], Date?) {
+    private struct FeedResult {
+        let results: [Feed.Result]
+        let updated: Date?
+        /// Read from the last copy saved on the phone because Apple's server didn't answer.
+        let cached: Bool
+    }
+
+    nonisolated private static var cacheDirectory: URL {
+        let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Charts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// "songs" or "albums": the 100 most played for the country. Apple's feed server
+    /// sometimes answers 502/503 for a moment (seemingly while it rebuilds a chart), so
+    /// server errors and network drops are retried twice; if it still fails, the last copy
+    /// that loaded is used.
+    nonisolated private static func fetchFeed(country: String, kind: String) async throws -> FeedResult {
         guard let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/100/\(kind).json") else {
             throw TrendingError.message("Bad chart address.")
         }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            throw TrendingError.message(status == 404 ? "Apple has no chart for \(countryName(country))." : "Apple's chart server answered \(status).")
+        let cacheFile = cacheDirectory.appendingPathComponent("\(country)-\(kind).json")
+        var lastError: Error = TrendingError.message("Apple's chart server didn't answer.")
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try await Task.sleep(nanoseconds: attempt == 1 ? 1_500_000_000 : 4_000_000_000)
+            }
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+            request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+            let data: Data
+            let status: Int
+            do {
+                let (body, response) = try await URLSession.shared.data(for: request)
+                data = body
+                status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            } catch let error as URLError where error.code != .cancelled {
+                lastError = error
+                continue
+            }
+            if status == 404 { throw TrendingError.message("Apple has no chart for \(countryName(country)).") }
+            guard status == 200 else {
+                lastError = TrendingError.message("Apple's chart server answered \(status). Pull down to try again.")
+                if status >= 500 || status == 429 { continue }
+                break
+            }
+            guard let parsed = decode(data) else {
+                lastError = TrendingError.message("Couldn't read Apple's chart.")
+                continue
+            }
+            try? data.write(to: cacheFile, options: .atomic)
+            return FeedResult(results: parsed.results, updated: parsed.updated, cached: false)
         }
-        let feed: Feed
-        do {
-            feed = try JSONDecoder().decode(Feed.self, from: data)
-        } catch {
-            throw TrendingError.message("Couldn't read Apple's chart.")
+        if let data = try? Data(contentsOf: cacheFile), let parsed = decode(data) {
+            return FeedResult(results: parsed.results, updated: parsed.updated, cached: true)
         }
+        throw lastError
+    }
+
+    nonisolated private static func decode(_ data: Data) -> (results: [Feed.Result], updated: Date?)? {
+        guard let feed = try? JSONDecoder().decode(Feed.self, from: data) else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"

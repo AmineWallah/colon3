@@ -37,6 +37,11 @@ struct HomeView: View {
                     }
                     if trending.entries.isEmpty {
                         chartStatus
+                    } else if let note = trending.staleNote {
+                        Label(note, systemImage: "exclamationmark.icloud")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
                     }
                     ForEach(sections) { section in
                         shelf(section)
