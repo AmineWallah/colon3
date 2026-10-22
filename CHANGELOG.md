@@ -6,7 +6,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 ## 1.1.0
 
 ### New
-- **Trending:** a new first tab with today's most played songs on Apple Music for any country, with cover art. Songs you have play with a tap; the rest have a download button that finds them on Soulseek.
+- **Home:** a new first tab laid out like Apple Music, with shelves for **Trending Songs** (new songs climbing Apple Music's chart), the **Top 100**, **Recent Releases** and **Recently Played**, for any country. Songs you have play with a tap; the rest have a download button that finds them on Soulseek. Releases you don't have open a Soulseek search for the album. Reorder or hide the shelves in Settings › Home Sections.
 - **Import from YouTube Music:** paste a link to any public or unlisted playlist from YouTube Music or YouTube; no account or setup. Songs are matched and downloaded the same way as Spotify and Apple Music imports.
 
 ### Fixed

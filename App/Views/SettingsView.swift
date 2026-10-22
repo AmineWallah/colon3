@@ -36,6 +36,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink("Home Sections") { HomeSectionsSettings() }
+                } header: {
+                    Text("Home")
+                }
+
+                Section {
                     Toggle("Autoplay", isOn: $player.autoplay)
                     Toggle("Autoplay Only from Library", isOn: $player.autoplayLibraryOnly)
                         .disabled(!player.autoplay)

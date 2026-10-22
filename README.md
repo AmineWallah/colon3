@@ -4,7 +4,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 
 - **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, and import from Files or other apps.
 - **Playlists:** your own (reorder, rename, .m3u8 import/export), plus Favorite Songs and Most Played.
-- **Trending:** today's Apple Music top 100 for any country, with one-tap downloads from Soulseek.
+- **Home:** Apple Music-style shelves for trending songs, the top 100, recent releases and recently played, with one-tap downloads from Soulseek.
 - **Spotify, Apple Music and YouTube Music import:** rebuild a Spotify playlist or your Liked Songs, an Apple Music playlist, or a YouTube Music playlist link from your library, downloading what's missing from Soulseek in the original order.
 - **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
 - **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
@@ -149,7 +149,7 @@ Settings › Software Update compares the installed build with `version.json`, w
 
 ### Links
 
-`colon3://player`, `colon3://trending`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.
+`colon3://player`, `colon3://home`, `colon3://downloads`, `colon3://library`, `colon3://search?q=…` and `colon3://wifi` open those screens, for Shortcuts or Back Tap (Settings › Accessibility › Touch › Back Tap › a shortcut that opens the URL). Tapping the transfers Live Activity opens Downloads.
 
 ### Bit-perfect mode
 
@@ -189,9 +189,16 @@ Then pick a playlist or Liked Songs. Songs already in your library go straight i
 
 Spotify only shows development-mode apps the songs of playlists **you own or collaborate on**. Playlists you just follow, including Spotify's own, are listed but greyed out. A workaround is to copy one into a playlist of your own in Spotify first.
 
-### Trending
+### Home
 
-The first tab shows today's 100 most played songs on Apple Music for a country (the globe button picks it; it starts on your region). The chart comes from Apple's public feed at `rss.marketingtools.apple.com`, needs no key, and updates daily. A tick means the song is in your library: tap it to play, with the chart's other songs you have queued after it. Otherwise the download button finds it on Soulseek through the same search queue and matching as imports and autoplay. Downloads keep going if you leave the tab.
+The first tab is laid out like Apple Music's, with four shelves you can reorder or hide in Settings › Home Sections:
+
+- **Trending Songs:** songs on Apple Music's top 100 that came out recently (in the last 6 weeks, widening to 3 or 6 months when there are fewer than 8), in chart order.
+- **Top 100:** Apple Music's 100 most played songs.
+- **Recent Releases:** albums on Apple Music's top 100 albums chart that came out recently, newest first.
+- **Recently Played:** albums and songs from your library, most recent first.
+
+The charts come from Apple's public feed at `rss.marketingtools.apple.com` for the country picked with the globe button (it starts on your region). No key is needed, and they update daily. A tick means a song or album is in your library: tap a song to play it, with the shelf's other songs you have queued after it, or an album to open it. Otherwise a song's download button finds it on Soulseek through the same search queue and matching as imports and autoplay, and a release opens the Search tab with the album searched, since albums come as folders there. Downloads keep going if you leave the tab. Tap a shelf's title for the full list.
 
 Spotify can't be used for this: since February 2026, development-mode apps can't read Spotify's browse endpoints or its own Top 50 playlists.
 

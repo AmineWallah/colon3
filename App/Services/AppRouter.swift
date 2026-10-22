@@ -104,7 +104,7 @@ final class AppRouter: ObservableObject {
         showImporter = true
     }
 
-    /// colon3://player, colon3://trending, colon3://downloads, colon3://library, colon3://search?q=…, colon3://wifi
+    /// colon3://player, colon3://home (or trending), colon3://downloads, colon3://library, colon3://search?q=…, colon3://wifi
     func handle(_ url: URL) {
         switch url.host?.lowercased() {
         case "player", "nowplaying":
@@ -115,7 +115,7 @@ final class AppRouter: ObservableObject {
         case "library":
             showPlayer = false
             tab = .library
-        case "trending", "charts":
+        case "home", "trending", "charts":
             showPlayer = false
             tab = .trending
         case "search":

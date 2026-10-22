@@ -9,13 +9,59 @@ struct ChartEntry: Identifiable, Hashable {
     let artist: String
     let artworkURL: URL?
     let appleMusicURL: URL?
+    let releaseDate: Date?
 
     var song: WantedSong { WantedSong(title: title, artists: [artist]) }
 }
 
-/// Today's most played songs on Apple Music for a country, from Apple's public chart feed
-/// (rss.marketingtools.apple.com, no key, updated daily), with downloads through the shared
-/// Soulseek fetcher. Downloads keep going when you leave the tab.
+/// One album on Apple's top albums chart.
+struct ChartAlbum: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+    let appleMusicURL: URL?
+    let releaseDate: Date?
+}
+
+/// The shelves on the Home tab, in the order Settings › Home Sections keeps.
+enum HomeSection: String, CaseIterable, Identifiable {
+    case trending, top100, releases, recent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .trending: return "Trending Songs"
+        case .top100: return "Top 100"
+        case .releases: return "Recent Releases"
+        case .recent: return "Recently Played"
+        }
+    }
+
+    static let orderKey = "home.sections"
+    static let hiddenKey = "home.hidden"
+
+    /// Every section in the saved order (new ones at the end), as stored in `orderKey`.
+    static func ordered(_ stored: String) -> [HomeSection] {
+        var result = stored.split(separator: ",").compactMap { HomeSection(rawValue: String($0)) }
+        for section in allCases where !result.contains(section) { result.append(section) }
+        return result
+    }
+
+    static func hidden(_ stored: String) -> Set<HomeSection> {
+        Set(stored.split(separator: ",").compactMap { HomeSection(rawValue: String($0)) })
+    }
+
+    static func encode<S: Sequence>(_ sections: S) -> String where S.Element == HomeSection {
+        sections.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+/// Apple Music's charts for a country, from Apple's public feed (rss.marketingtools.apple.com,
+/// no key, updated daily): the top 100 songs, the songs on it that came out recently
+/// ("trending"), and the top albums that came out recently. Downloads go through the shared
+/// Soulseek fetcher and keep going when you leave the tab.
 @MainActor
 final class TrendingStore: ObservableObject {
     enum Fetch: Equatable {
@@ -43,10 +89,14 @@ final class TrendingStore: ObservableObject {
             guard country != oldValue else { return }
             UserDefaults.standard.set(country, forKey: "trending.country")
             entries = []
+            albums = []
             Task { await load(force: true) }
         }
     }
+    /// The top 100 songs, in chart order.
     @Published private(set) var entries: [ChartEntry] = []
+    /// The top 100 albums, in chart order.
+    @Published private(set) var albums: [ChartAlbum] = []
     @Published private(set) var updated: Date?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
@@ -95,9 +145,24 @@ final class TrendingStore: ObservableObject {
         loadToken = token
         isLoading = true
         do {
-            let (chart, date) = try await Self.fetchChart(country: wanted)
+            // Albums are a bonus: the page still works if only the songs chart loads.
+            async let songsFeed = Self.fetchFeed(country: wanted, kind: "songs")
+            async let albumsFeed = try? Self.fetchFeed(country: wanted, kind: "albums")
+            let (songResults, date) = try await songsFeed
+            let albumResults = (await albumsFeed)?.0 ?? []
             guard token == loadToken else { return }  // A newer load (another country) takes over.
-            entries = chart
+            entries = songResults.enumerated().map { offset, result in
+                ChartEntry(id: result.id, rank: offset + 1, title: result.name, artist: result.artistName,
+                           artworkURL: Self.artwork(result.artworkUrl100, size: 300),
+                           appleMusicURL: result.url.flatMap { URL(string: $0) },
+                           releaseDate: Self.day(result.releaseDate))
+            }
+            albums = albumResults.map { result in
+                ChartAlbum(id: result.id, title: result.name, artist: result.artistName,
+                           artworkURL: Self.artwork(result.artworkUrl100, size: 600),
+                           appleMusicURL: result.url.flatMap { URL(string: $0) },
+                           releaseDate: Self.day(result.releaseDate))
+            }
             updated = date
             loadedAt = Date()
             loadedCountry = wanted
@@ -123,6 +188,7 @@ final class TrendingStore: ObservableObject {
             let artistName: String
             let artworkUrl100: String?
             let url: String?
+            let releaseDate: String?
         }
         let feed: Body
     }
@@ -136,8 +202,9 @@ final class TrendingStore: ObservableObject {
         }
     }
 
-    nonisolated private static func fetchChart(country: String) async throws -> ([ChartEntry], Date?) {
-        guard let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/100/songs.json") else {
+    /// "songs" or "albums": the 100 most played for the country.
+    nonisolated private static func fetchFeed(country: String, kind: String) async throws -> ([Feed.Result], Date?) {
+        guard let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/100/\(kind).json") else {
             throw TrendingError.message("Bad chart address.")
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
@@ -153,17 +220,50 @@ final class TrendingStore: ObservableObject {
         } catch {
             throw TrendingError.message("Couldn't read Apple's chart.")
         }
-        let entries = feed.feed.results.enumerated().map { offset, result -> ChartEntry in
-            // The feed links 100 px covers; Apple's image server makes any size from the same URL.
-            let artwork = result.artworkUrl100?.replacingOccurrences(of: "100x100bb", with: "300x300bb")
-            return ChartEntry(id: result.id, rank: offset + 1, title: result.name, artist: result.artistName,
-                              artworkURL: artwork.flatMap { URL(string: $0) },
-                              appleMusicURL: result.url.flatMap { URL(string: $0) })
-        }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
-        return (entries, feed.feed.updated.flatMap { formatter.date(from: $0) })
+        return (feed.feed.results, feed.feed.updated.flatMap { formatter.date(from: $0) })
+    }
+
+    /// The feed links 100 px covers; Apple's image server makes any size from the same URL.
+    nonisolated private static func artwork(_ address: String?, size: Int) -> URL? {
+        address.flatMap { URL(string: $0.replacingOccurrences(of: "100x100bb", with: "\(size)x\(size)bb")) }
+    }
+
+    /// "2026-10-16" → that day.
+    nonisolated private static func day(_ text: String?) -> Date? {
+        guard let text else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: text)
+    }
+
+    // MARK: Shelves
+
+    /// Songs on the top 100 that came out recently, in chart order: what's new and catching on.
+    /// The window widens (6 weeks, then 3 and 6 months) until there are at least 8, so a chart
+    /// full of older hits still has a shelf.
+    var trendingSongs: [ChartEntry] {
+        Self.recent(entries, at: \.releaseDate, minimum: 8)
+    }
+
+    /// Albums on the top 100 albums chart that came out recently, newest first.
+    var recentReleases: [ChartAlbum] {
+        Self.recent(albums, at: \.releaseDate, minimum: 6)
+            .sorted { ($0.releaseDate ?? .distantPast) > ($1.releaseDate ?? .distantPast) }
+    }
+
+    private static func recent<Item>(_ items: [Item], at date: KeyPath<Item, Date?>, minimum: Int) -> [Item] {
+        let now = Date()
+        for days in [42.0, 90, 180] {
+            let cutoff = now.addingTimeInterval(-days * 86_400)
+            let picked = items.filter { ($0[keyPath: date] ?? .distantPast) >= cutoff }
+            if picked.count >= minimum { return picked }
+        }
+        return items.filter { ($0[keyPath: date] ?? .distantPast) >= now.addingTimeInterval(-365 * 86_400) }
     }
 
     // MARK: Library and downloads
@@ -175,9 +275,20 @@ final class TrendingStore: ObservableObject {
         return index.match(entry.song)
     }
 
-    /// Chart songs you have, in chart order (to queue them when one is played).
-    func libraryTracks() -> [Track] {
-        entries.compactMap { libraryTrack(for: $0) }
+    /// Songs you have among `list`, in order (to queue them when one is played).
+    func libraryTracks(in list: [ChartEntry]) -> [Track] {
+        list.compactMap { libraryTrack(for: $0) }
+    }
+
+    /// The library album matching a chart album, if you have it.
+    func libraryAlbum(for album: ChartAlbum) -> Album? {
+        let title = TrackMatcher.normalizeTitle(album.title.replacingOccurrences(of: #"\s+-\s+(EP|Single)$"#, with: "",
+                                                                                   options: .regularExpression))
+        let artists = TrackMatcher.artistKeys(album.artist)
+        return library.albums.first { candidate in
+            TrackMatcher.normalizeTitle(candidate.title) == title
+                && TrackMatcher.artistsOverlap(TrackMatcher.artistKeys(candidate.artist), artists)
+        }
     }
 
     func download(_ entry: ChartEntry) {
