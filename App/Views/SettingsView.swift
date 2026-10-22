@@ -7,6 +7,8 @@ struct SettingsView: View {
     @EnvironmentObject private var lastfm: LastFM
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var server: WiFiTransferServer
+    @EnvironmentObject private var drive: GoogleDrive
+    @EnvironmentObject private var backup: BackupService
 
     @AppStorage(AppSettings.artworkLookupKey) private var artworkLookup = true
     @AppStorage(AppSettings.lyricsLookupKey) private var lyricsLookup = true
@@ -106,6 +108,18 @@ struct SettingsView: View {
                 SpotifyAccountSection()
 
                 Section {
+                    NavigationLink {
+                        BackupView()
+                    } label: {
+                        LabeledContent("Backup", value: backupStatus)
+                    }
+                } header: {
+                    Text("Backup")
+                } footer: {
+                    Text("Back up your song list, playlists, favourites, stats and settings to Google Drive or a file, and optionally the music itself.")
+                }
+
+                Section {
                     LabeledContent("Songs", value: "\(library.tracks.count)")
                     LabeledContent("Albums", value: "\(library.albums.count)")
                     Button("Rescan Library") { library.rescan() }
@@ -130,6 +144,12 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $router.showWiFiTransfer) { WiFiTransferView() }
             .onAppear { username = soulseek.username }
         }
+    }
+
+    private var backupStatus: String {
+        if backup.isWorking { return "Working\u{2026}" }
+        guard drive.isConnected else { return backup.pending.songs.isEmpty ? "Off" : "\(backup.pending.songs.count) missing" }
+        return backup.lastBackup.map { $0.formatted(.relative(presentation: .named)) } ?? "Not Yet"
     }
 
     private var soulseekSection: some View {

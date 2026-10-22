@@ -213,6 +213,62 @@ final class StatsStore: ObservableObject {
         }
     }
 
+    // MARK: Backup
+
+    /// Everything, as stats.json stores it.
+    func exportData() -> Data? {
+        try? JSONEncoder().encode(stored)
+    }
+
+    /// Merges stats from a backup. `remap` turns the backup's song ids into this library's.
+    /// Keeps the larger number for each song, day and total, so restoring the same backup twice
+    /// (or onto the phone it came from) doesn't count anything twice.
+    @discardableResult
+    func merge(_ data: Data, remap: [String: String]) -> Bool {
+        guard let incoming = try? JSONDecoder().decode(Stored.self, from: data) else { return false }
+        for (oldID, stat) in incoming.tracks {
+            let id = remap[oldID] ?? oldID
+            if let current = stored.tracks[id] {
+                stored.tracks[id] = Self.combined(current, stat)
+            } else {
+                stored.tracks[id] = stat
+            }
+        }
+        for (day, seconds) in incoming.days {
+            stored.days[day] = max(stored.days[day] ?? 0, seconds)
+        }
+        var totals = stored.totals
+        totals.downloadedBytes = max(totals.downloadedBytes, incoming.totals.downloadedBytes)
+        totals.downloadedFiles = max(totals.downloadedFiles, incoming.totals.downloadedFiles)
+        totals.uploadedBytes = max(totals.uploadedBytes, incoming.totals.uploadedBytes)
+        totals.uploadedFiles = max(totals.uploadedFiles, incoming.totals.uploadedFiles)
+        totals.peers.formUnion(incoming.totals.peers)
+        totals.since = min(totals.since, incoming.totals.since)
+        stored.totals = totals
+        save()
+        return true
+    }
+
+    /// A song's file moved (found again after a restore): its stats follow it.
+    func moveStats(from oldID: String, to newID: String) {
+        guard oldID != newID, let stat = stored.tracks.removeValue(forKey: oldID) else { return }
+        if let current = stored.tracks[newID] {
+            stored.tracks[newID] = Self.combined(current, stat)
+        } else {
+            stored.tracks[newID] = stat
+        }
+        scheduleSave()
+    }
+
+    private static func combined(_ current: TrackStat, _ other: TrackStat) -> TrackStat {
+        var result = current
+        result.plays = max(current.plays, other.plays)
+        result.seconds = max(current.seconds, other.seconds)
+        if let played = other.lastPlayed, played > (current.lastPlayed ?? .distantPast) { result.lastPlayed = played }
+        if result.album == nil { result.album = other.album }
+        return result
+    }
+
     /// Also called when the app goes to the background.
     func save() {
         saveScheduled = false

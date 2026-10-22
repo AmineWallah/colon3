@@ -34,6 +34,7 @@ enum ImportKind {
     case playlist
     case lyrics(Track)
     case artwork(ArtworkTarget)
+    case backup
 
     var types: [UTType] {
         switch self {
@@ -41,6 +42,7 @@ enum ImportKind {
         case .playlist: return [.m3uPlaylist, UTType(filenameExtension: "m3u8"), UTType(filenameExtension: "m3u")].compactMap { $0 }
         case .lyrics: return [UTType(filenameExtension: "lrc"), .plainText, .text].compactMap { $0 }
         case .artwork: return [.image]
+        case .backup: return [.json]
         }
     }
 
@@ -48,6 +50,14 @@ enum ImportKind {
         if case .music = self { return true }
         return false
     }
+}
+
+/// A backup to look at before restoring it.
+struct BackupRestoreRequest: Identifiable {
+    let id = UUID()
+    let backup: BackupFile
+    /// Where it came from, for the sheet ("Google Drive", or the file's name).
+    let source: String
 }
 
 struct PlaylistRequest: Identifiable {
@@ -76,6 +86,8 @@ final class AppRouter: ObservableObject {
     @Published var pendingSearch: String?
     /// The Spotify / Apple Music import sheet.
     @Published var playlistImport: ImportSheetRoute?
+    /// The restore sheet.
+    @Published var backupRestore: BackupRestoreRequest?
 
     init() {
         tab = UserDefaults.standard.string(forKey: "selectedTab").flatMap(AppTab.init(rawValue:)) ?? .library
@@ -85,6 +97,7 @@ final class AppRouter: ObservableObject {
     func importPlaylist() { presentImporter(.playlist) }
     func importLyrics(for track: Track) { presentImporter(.lyrics(track)) }
     func importArtworkFile(for target: ArtworkTarget) { presentImporter(.artwork(target)) }
+    func importBackupFile() { presentImporter(.backup) }
     func pickArtworkPhoto(for target: ArtworkTarget) {
         photoTarget = target
         showPhotoPicker = true

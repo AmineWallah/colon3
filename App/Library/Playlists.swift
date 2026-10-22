@@ -75,6 +75,28 @@ final class PlaylistStore: ObservableObject {
         edit(playlist) { $0.trackIDs = ids }
     }
 
+    /// A playlist from a backup: replaces the one with the same id, or is added.
+    func restore(_ restored: Playlist) {
+        if let index = playlists.firstIndex(where: { $0.id == restored.id }) {
+            playlists[index] = restored
+        } else {
+            playlists.append(restored)
+            playlists.sort { $0.created > $1.created }
+        }
+        save()
+    }
+
+    /// A restored song turned up under a different file name: every playlist follows it.
+    func replaceTrackID(_ oldID: String, with newID: String) {
+        guard oldID != newID else { return }
+        var changed = false
+        for index in playlists.indices where playlists[index].trackIDs.contains(oldID) {
+            playlists[index].trackIDs = playlists[index].trackIDs.map { $0 == oldID ? newID : $0 }
+            changed = true
+        }
+        if changed { save() }
+    }
+
     /// Songs autoplay downloaded go into one playlist, so they're easy to find, keep or delete.
     func addToAutoplayDiscoveries(_ track: Track) {
         let key = "autoplay.discoveriesPlaylist"

@@ -14,6 +14,8 @@ final class TransferMonitor {
     private let soulseek: SoulseekModel
     private let player: Player
     private weak var stats: StatsStore?
+    /// Backups and restores keep the app awake too (no Live Activity for them).
+    private var backupWorking = false
     private let keeper = BackgroundKeeper()
     private var activity: Activity<TransferActivityAttributes>?
     private var subscriptions = Set<AnyCancellable>()
@@ -30,7 +32,7 @@ final class TransferMonitor {
     private var downloadBatch: [DownloadID: Progress] = [:]
     private var uploadBatch: [DownloadID: Progress] = [:]
 
-    init(soulseek: SoulseekModel, player: Player, stats: StatsStore) {
+    init(soulseek: SoulseekModel, player: Player, stats: StatsStore, backup: BackupService) {
         self.soulseek = soulseek
         self.player = player
         self.stats = stats
@@ -45,6 +47,16 @@ final class TransferMonitor {
             .throttle(for: .seconds(1.5), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _, _, _, _ in
                 MainActor.assumeIsolated { self?.refresh() }
+            }
+            .store(in: &subscriptions)
+
+        // @Published sends before the value changes, so use the value it sends.
+        backup.workPublisher
+            .sink { [weak self] working in
+                MainActor.assumeIsolated {
+                    self?.backupWorking = working
+                    self?.refresh()
+                }
             }
             .store(in: &subscriptions)
 
@@ -92,7 +104,7 @@ final class TransferMonitor {
         }
 
         // Keep-alive only matters when music isn't already keeping the app running.
-        let wantsKeeper = (busy && AppSettings.flag(AppSettings.backgroundTransfersKey)) || seeding
+        let wantsKeeper = ((busy || backupWorking) && AppSettings.flag(AppSettings.backgroundTransfersKey)) || seeding
         if wantsKeeper, !isPlaying {
             keeper.start()
         } else {

@@ -5,7 +5,7 @@ struct Colon3App: App {
     @StateObject private var library: LibraryStore
     @StateObject private var soulseek: SoulseekModel
     @StateObject private var player: Player
-    @StateObject private var favorites = FavoritesStore()
+    @StateObject private var favorites: FavoritesStore
     @StateObject private var lastfm: LastFM
     @StateObject private var completeness: AlbumCompletenessStore
     @StateObject private var stats: StatsStore
@@ -17,6 +17,8 @@ struct Colon3App: App {
     @StateObject private var playlists: PlaylistStore
     @StateObject private var importer: PlaylistImporter
     @StateObject private var trending: TrendingStore
+    @StateObject private var drive: GoogleDrive
+    @StateObject private var backup: BackupService
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
 
@@ -46,8 +48,15 @@ struct Colon3App: App {
         player.onAutoplayDownload = { [weak playlists] track in playlists?.addToAutoplayDiscoveries(track) }
         let wifi = WiFiTransferServer(root: library.root)
         wifi.onFilesChanged = { [weak library] in library?.rescan() }
+        let favorites = FavoritesStore()
+        let drive = GoogleDrive()
+        let backup = BackupService(drive: drive, library: library, playlists: playlists, favorites: favorites,
+                                   stats: stats, fetcher: fetcher)
         _completeness = StateObject(wrappedValue: completeness)
-        transferMonitor = TransferMonitor(soulseek: soulseek, player: player, stats: stats)
+        transferMonitor = TransferMonitor(soulseek: soulseek, player: player, stats: stats, backup: backup)
+        _favorites = StateObject(wrappedValue: favorites)
+        _drive = StateObject(wrappedValue: drive)
+        _backup = StateObject(wrappedValue: backup)
         _library = StateObject(wrappedValue: library)
         _soulseek = StateObject(wrappedValue: soulseek)
         _player = StateObject(wrappedValue: player)
@@ -78,6 +87,8 @@ struct Colon3App: App {
                 .environmentObject(appleMusic)
                 .environmentObject(importer)
                 .environmentObject(trending)
+                .environmentObject(drive)
+                .environmentObject(backup)
                 .onAppear {
                     soulseek.start()
                     lastfm.flush()
@@ -103,6 +114,7 @@ struct Colon3App: App {
                 library.rescan()
                 lastfm.flush()
                 updates.checkIfDue()
+                backup.backUpIfDue()
             case .background:
                 stats.save()
             default:

@@ -10,6 +10,7 @@ struct RouterPresenters: ViewModifier {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var playlists: PlaylistStore
+    @EnvironmentObject private var backup: BackupService
     @State private var photoItem: PhotosPickerItem?
 
     func body(content: Content) -> some View {
@@ -19,6 +20,9 @@ struct RouterPresenters: ViewModifier {
             }
             .sheet(item: active ? $router.playlistImport : .constant(nil)) { route in
                 PlaylistImportSheet(route: route)
+            }
+            .sheet(item: active ? $router.backupRestore : .constant(nil)) { request in
+                RestoreBackupSheet(request: request)
             }
             .fileImporter(isPresented: active ? $router.showImporter : .constant(false),
                           allowedContentTypes: router.importKind.types,
@@ -75,6 +79,14 @@ struct RouterPresenters: ViewModifier {
                 router.lyricsChanged()
             } else {
                 router.message = "Couldn't read that lyrics file."
+            }
+
+        case .backup:
+            do {
+                let file = try backup.loadFile(urls[0])
+                router.backupRestore = BackupRestoreRequest(backup: file, source: urls[0].lastPathComponent)
+            } catch {
+                router.message = error.localizedDescription
             }
 
         case let .artwork(target):

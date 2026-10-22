@@ -59,6 +59,25 @@ final class FavoritesStore: ObservableObject {
         save()
     }
 
+    /// Adds favourites from a backup (keeping the ones already here).
+    func restore(songs restoredSongs: [String], albums restoredAlbums: [String]) {
+        songs.formUnion(restoredSongs)
+        albums.formUnion(restoredAlbums)
+        save()
+    }
+
+    /// A restored song turned up under a different file name.
+    func replaceSong(_ oldID: String, with newID: String) {
+        guard oldID != newID, songs.remove(oldID) != nil else { return }
+        songs.insert(newID)
+        save()
+    }
+
+    func addAlbum(id: String) {
+        guard albums.insert(id).inserted else { return }
+        save()
+    }
+
     private func save() {
         let stored = Stored(songs: songs.sorted(), albums: albums.sorted())
         if let data = try? JSONEncoder().encode(stored) {

@@ -29,6 +29,9 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # "stable" or "beta"; CI sets it from the branch. Picks the default update channel.
         Colon3Channel: "$(COLON3_CHANNEL)"
+        # Google Drive backups: the iOS OAuth client ID from Google Cloud (see the README).
+        # CI fills it from the GOOGLE_CLIENT_ID repository variable.
+        Colon3GoogleClientID: "$(COLON3_GOOGLE_CLIENT_ID)"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
@@ -64,6 +67,7 @@ targets:
         MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "1"
         COLON3_CHANNEL: stable
+        COLON3_GOOGLE_CLIENT_ID: ""
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic

@@ -12,6 +12,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
+- **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
 
 Meant for sideloading. It won't pass App Store review.
@@ -23,7 +24,7 @@ App/
   Library/                 scanning, metadata (incl. a small FLAC tag reader), albums, artwork, favourites
   Playback/                AVAudioEngine + EQ backend, AVPlayer spatial backend, queue
   Import/                  Spotify, Apple Music and YouTube Music playlist import
-  Services/                LRCLIB lyrics, Last.fm, keychain and settings
+  Services/                LRCLIB lyrics, Last.fm, Google Drive backup, keychain and settings
   Soulseek/                search results, downloads, cover fetching
   Views/                   SwiftUI screens
 Packages/SoulseekKit/      Protocol package (no dependencies)
@@ -98,6 +99,23 @@ Things to know:
 - **The page is public.** Pages on a public repo is open to anyone who finds the URL. It's marked `noindex`, but anyone with the link can install your signed build. That's harmless for you, but wide distribution under a shared enterprise cert makes revocation more likely.
 - **Secrets never reach pull requests.** The signing job only runs for pushes to `main`.
 - **If the cert gets revoked,** the run summary's certificate check shows it. Replace the three secrets with the new cert and re-run the workflow.
+
+### One-time setup for Google Drive backups
+
+Backups talk to the Google Drive API directly, so the app needs an OAuth client ID from a Google Cloud project. You make it once; everyone using your build just taps Connect Google Drive and signs in. It's free.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (e.g. `colon3`).
+2. **APIs & Services › Library:** find **Google Drive API** and tap **Enable**.
+3. **Google Auth Platform** (the OAuth consent screen): fill in **Branding** with the app name and your email (leave out the logo, or Google wants to review the branding first), set **Audience** to **External**, and under **Data Access** add the scope `https://www.googleapis.com/auth/drive.file`.
+4. **Clients › Create client:** type **iOS**, bundle ID `com.aminewallah.colon3` (or your `SIGN_BUNDLE_ID`). No secret is made for iOS clients. Copy the client ID, which ends in `.apps.googleusercontent.com`.
+5. **Audience › Publish app.** While it's in Testing, only the test users you list can sign in and their sign-in expires after 7 days. `drive.file` is a non-sensitive scope, so publishing needs no review: colon3 can only see the files it creates, not the rest of anyone's Drive.
+6. Give CI the client ID (it isn't secret):
+   ```sh
+   gh variable set GOOGLE_CLIENT_ID --body 1234567890-abc123.apps.googleusercontent.com
+   ```
+   For a local build, put it in `COLON3_GOOGLE_CLIENT_ID` in `project.yml` instead.
+
+A build without a client ID still has Settings › Backup: it asks for one there, and backup files work without Google at all.
 
 ### Beta channel
 
@@ -215,6 +233,16 @@ Library › Playlists › Import from YouTube Music…, then paste a playlist li
 ### Importing from Apple Music
 
 Library › Playlists › Import from Apple Music… asks for access to your Music library and lists its playlists. They're matched and downloaded the same way. colon3 only reads song names; it can't copy Apple Music's own files.
+
+### Backup
+
+Settings › Backup. **Connect Google Drive**, then **Back Up Now**. The backup is `colon3-backup.json` in a **colon3 Backup** folder in your Drive: a readable list of every song (path, title, artist, album, track number, length), your playlists, favourites, listening stats and settings. Passwords, tokens and API keys are never in it.
+
+- **Back Up Automatically:** once a day, when you open colon3. It only starts after this phone has backed up or restored once, so a fresh install can't replace your backup with an empty one.
+- **Include Music:** also uploads the song files (with their covers and .lrc lyrics) into `colon3 Backup/Music/`, in the same folders as on the phone. Each backup only sends what's new or changed. Uploads wait for Wi-Fi unless **Use Cellular Data** is on, and keep going in the background while **Keep Transfers Running in Background** is on. Files you delete from colon3 stay in Drive; delete them there if you want the space back.
+- **Restore:** brings back playlists (replacing any with the same identity), adds favourites and stats to what's there, and optionally settings. Songs already on the phone are found by file or by title and artist. The rest are listed under **Missing Songs**: download them from the Drive music backup, or find them on Soulseek (just the ones in playlists and favourites, or all of them). Playlists keep their place for missing songs and fill in as they arrive, including songs you copy in yourself.
+- **Backup File:** **Export Backup File** shares the same backup as a `.json` (without the music) and **Import Backup File** restores one, with no Google account involved.
+- **Disconnect** signs out and removes colon3's access from your Google account; the backup stays in Drive.
 
 ## How it works (and what it can't do)
 

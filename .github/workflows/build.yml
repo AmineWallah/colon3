@@ -79,8 +79,13 @@ jobs:
         run: xcodegen generate
 
       - name: Build
+        env:
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
           set -o pipefail
+          # Google Drive backups need the iOS OAuth client ID (a repository variable; not secret).
+          extra=()
+          if [ -n "$GOOGLE_CLIENT_ID" ]; then extra+=("COLON3_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"); fi
           xcodebuild build \
             -project colon3.xcodeproj \
             -scheme colon3 \
@@ -94,6 +99,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            ${extra[@]+"${extra[@]}"} \
             | tee xcodebuild.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
           test -d build/Build/Products/Release-iphoneos/colon3.app
 
