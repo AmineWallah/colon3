@@ -24,6 +24,20 @@ struct ChartAlbum: Identifiable, Hashable {
     let releaseDate: Date?
 }
 
+/// A song on a release's tracklist (from Apple's lookup API).
+struct ReleaseTrack: Identifiable, Hashable {
+    /// Apple's song ID; the same one the songs chart uses, so download state is shared.
+    let id: String
+    let disc: Int
+    let number: Int
+    let title: String
+    let artist: String
+    let album: String
+    let duration: Double?
+
+    var song: WantedSong { WantedSong(title: title, artists: [artist], album: album, duration: duration) }
+}
+
 /// The shelves on the Home tab, in the order Settings › Home Sections keeps.
 enum HomeSection: String, CaseIterable, Identifiable {
     case trending, top100, releases, recent
@@ -110,6 +124,7 @@ final class TrendingStore: ObservableObject {
     private let fetcher: SongFetcher
     private let library: LibraryStore
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var tracklists: [String: [ReleaseTrack]] = [:]
     private var loadedAt = Date.distantPast
     private var loadedCountry = ""
     /// The newest load; an older one that finishes later (country changed) is ignored.
@@ -332,9 +347,17 @@ final class TrendingStore: ObservableObject {
 
     /// The library copy of a chart song, if you have it.
     func libraryTrack(for entry: ChartEntry) -> Track? {
-        if case let .done(trackID)? = fetches[entry.id], let track = library.track(id: trackID) { return track }
+        libraryTrack(id: entry.id, song: entry.song)
+    }
+
+    func libraryTrack(for track: ReleaseTrack) -> Track? {
+        libraryTrack(id: track.id, song: track.song)
+    }
+
+    private func libraryTrack(id: String, song: WantedSong) -> Track? {
+        if case let .done(trackID)? = fetches[id], let track = library.track(id: trackID) { return track }
         refreshIndex()
-        return index.match(entry.song)
+        return index.match(song)
     }
 
     /// Songs you have among `list`, in order (to queue them when one is played).
@@ -354,10 +377,16 @@ final class TrendingStore: ObservableObject {
     }
 
     func download(_ entry: ChartEntry) {
-        guard tasks[entry.id] == nil else { return }
-        fetches[entry.id] = .searching
-        let id = entry.id
-        let song = entry.song
+        download(id: entry.id, song: entry.song)
+    }
+
+    func download(_ track: ReleaseTrack) {
+        download(id: track.id, song: track.song)
+    }
+
+    private func download(id: String, song: WantedSong) {
+        guard tasks[id] == nil else { return }
+        fetches[id] = .searching
         tasks[id] = Task { [weak self] in
             guard let fetcher = self?.fetcher else { return }
             let outcome = await fetcher.fetch(song) { progress in
@@ -383,9 +412,69 @@ final class TrendingStore: ObservableObject {
     }
 
     func cancel(_ entry: ChartEntry) {
-        tasks[entry.id]?.cancel()
-        tasks[entry.id] = nil
-        fetches[entry.id] = nil
+        cancel(id: entry.id)
+    }
+
+    func cancel(_ track: ReleaseTrack) {
+        cancel(id: track.id)
+    }
+
+    private func cancel(id: String) {
+        tasks[id]?.cancel()
+        tasks[id] = nil
+        fetches[id] = nil
+    }
+
+    // MARK: Release tracklists
+
+    /// The album's songs in order, from Apple's lookup API (no key). Some storefronts (Algeria,
+    /// for one) return the album without its songs, so the US store is asked next; album IDs
+    /// are the same everywhere.
+    func tracklist(for album: ChartAlbum) async throws -> [ReleaseTrack] {
+        if let cached = tracklists[album.id] { return cached }
+        var tracks = try await Self.lookupTracks(albumID: album.id, country: country)
+        if tracks.isEmpty, country != "us" {
+            tracks = try await Self.lookupTracks(albumID: album.id, country: "us")
+        }
+        guard !tracks.isEmpty else { throw TrendingError.message("Apple didn't list the songs on this album.") }
+        tracklists[album.id] = tracks
+        return tracks
+    }
+
+    nonisolated private static func lookupTracks(albumID: String, country: String) async throws -> [ReleaseTrack] {
+        var components = URLComponents(string: "https://itunes.apple.com/lookup")!
+        components.queryItems = [
+            URLQueryItem(name: "id", value: albumID),
+            URLQueryItem(name: "entity", value: "song"),
+            URLQueryItem(name: "country", value: country),
+            URLQueryItem(name: "limit", value: "200"),
+        ]
+        var request = URLRequest(url: components.url!, timeoutInterval: 20)
+        request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw TrendingError.message(status == 403 || status == 429
+                ? "Apple is limiting requests right now. Try again in a minute."
+                : "Apple's lookup server answered \(status).")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw TrendingError.message("Couldn't read Apple's album info.")
+        }
+        let results = json["results"] as? [[String: Any]] ?? []
+        let tracks = results.compactMap { item -> ReleaseTrack? in
+            guard item["wrapperType"] as? String == "track", item["kind"] as? String == "song",
+                  let id = item["trackId"] as? Int, let title = item["trackName"] as? String else { return nil }
+            let milliseconds = item["trackTimeMillis"] as? Double ?? 0
+            return ReleaseTrack(id: String(id),
+                                disc: item["discNumber"] as? Int ?? 1,
+                                number: item["trackNumber"] as? Int ?? 0,
+                                title: title,
+                                artist: item["artistName"] as? String ?? "",
+                                album: item["collectionName"] as? String ?? "",
+                                duration: milliseconds > 0 ? milliseconds / 1000 : nil)
+        }
+        return tracks.sorted { ($0.disc, $0.number) < ($1.disc, $1.number) }
     }
 
     private func refreshIndex() {

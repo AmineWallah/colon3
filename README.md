@@ -198,7 +198,9 @@ The first tab is laid out like Apple Music's, with four shelves you can reorder 
 - **Recent Releases:** albums on Apple Music's top 100 albums chart that came out recently, newest first.
 - **Recently Played:** albums and songs from your library, most recent first.
 
-The charts come from Apple's public feed at `rss.marketingtools.apple.com` for the country picked with the globe button (it starts on your region). No key is needed, and they update daily. A tick means a song or album is in your library: tap a song to play it, with the shelf's other songs you have queued after it, or an album to open it. Otherwise a song's download button finds it on Soulseek through the same search queue and matching as imports and autoplay, and a release opens the Search tab with the album searched, since albums come as folders there. Downloads keep going if you leave the tab. Tap a shelf's title for the full list.
+The charts come from Apple's public feed at `rss.marketingtools.apple.com` for the country picked with the globe button (it starts on your region). No key is needed, and they update daily. A tick means a song or album is in your library: tap a song to play it, with the shelf's other songs you have queued after it, or an album to open it. Otherwise a song's download button finds it on Soulseek through the same search queue and matching as imports and autoplay.
+
+Tapping a release opens its page: the full tracklist from Apple's lookup API (`itunes.apple.com/lookup`, no key; the US store is used when your country's store doesn't list the songs), with a tick on the songs you have and a download button on the rest. **Download Missing** fetches each missing song on its own, matched by title, artist and exact length. **Find Album** opens the Search tab with the album searched instead, for getting the whole album folder from one peer. **Open in Library** appears once you have the album. Downloads keep going if you leave the tab. Tap a shelf's title for the full list.
 
 Spotify can't be used for this: since February 2026, development-mode apps can't read Spotify's browse endpoints or its own Top 50 playlists.
 

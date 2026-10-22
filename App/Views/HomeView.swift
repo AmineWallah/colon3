@@ -5,6 +5,7 @@ enum HomeRoute: Hashable {
     case songs(HomeSection)
     case releases
     case recent
+    case release(ChartAlbum)
 }
 
 /// The Home tab, laid out like Apple Music's: shelves for trending songs, the top 100, recent
@@ -63,6 +64,8 @@ struct HomeView: View {
                     ReleasesGrid()
                 case .recent:
                     RecentlyPlayedGrid()
+                case let .release(album):
+                    ReleaseDetailView(album: album)
                 }
             }
             .navigationDestination(for: Album.self) { AlbumDetailView(album: $0) }
@@ -270,15 +273,28 @@ struct ChartSongRow: View {
         }
     }
 
-    @ViewBuilder
     private func control(track: Track?, fetch: TrendingStore.Fetch?) -> some View {
-        if track != nil {
+        FetchControl(inLibrary: track != nil, fetch: fetch, title: entry.title,
+                     onDownload: { trending.download(entry) }, onCancel: { trending.cancel(entry) })
+    }
+}
+
+/// In library (tick), downloading (spinner that cancels), failed (retry) or download.
+struct FetchControl: View {
+    let inLibrary: Bool
+    let fetch: TrendingStore.Fetch?
+    let title: String
+    let onDownload: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        if inLibrary {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.tint)
                 .frame(width: 32, height: 32)
                 .accessibilityLabel("In your library")
         } else if let fetch, fetch.isActive {
-            Button { trending.cancel(entry) } label: {
+            Button(action: onCancel) {
                 ZStack {
                     ProgressView()
                     Image(systemName: "stop.fill").font(.system(size: 8))
@@ -288,7 +304,7 @@ struct ChartSongRow: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Cancel download")
         } else if fetch?.isFailed == true {
-            Button { trending.download(entry) } label: {
+            Button(action: onDownload) {
                 Image(systemName: "arrow.clockwise.circle")
                     .font(.title2)
                     .frame(width: 32, height: 32)
@@ -297,13 +313,13 @@ struct ChartSongRow: View {
             .foregroundStyle(.orange)
             .accessibilityLabel("Try again")
         } else {
-            Button { trending.download(entry) } label: {
+            Button(action: onDownload) {
                 Image(systemName: "arrow.down.circle")
                     .font(.title2)
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Download \(entry.title)")
+            .accessibilityLabel("Download \(title)")
         }
     }
 }
@@ -345,7 +361,7 @@ private struct ChartSongList: View {
 
 // MARK: - Albums
 
-/// A recent release. Opens the album if you have it; otherwise searches Soulseek for it.
+/// A recent release. Opens its page: the full tracklist, with what you have and what's missing.
 private struct ReleaseCard: View {
     let album: ChartAlbum
     /// In a sideways shelf the card sizes itself to half the screen; in a grid the grid sizes it.
@@ -375,16 +391,12 @@ private struct ReleaseCard: View {
         .modifier(ShelfWidth(active: inShelf))
         .contentShape(Rectangle())
 
-        Group {
-            if let owned {
-                NavigationLink(value: owned) { card }
-            } else {
-                Button { searchSoulseek() } label: { card }
-            }
-        }
+        NavigationLink(value: HomeRoute.release(album)) { card }
         .buttonStyle(.plain)
         .contextMenu {
-            Button { searchSoulseek() } label: { Label("Search on Soulseek", systemImage: "magnifyingglass") }
+            Button { searchSoulseekForAlbum(album, router: router) } label: {
+                Label("Search on Soulseek", systemImage: "magnifyingglass")
+            }
             if let url = album.appleMusicURL {
                 Link(destination: url) { Label("Open in Apple Music", systemImage: "arrow.up.forward.app") }
             }
@@ -393,12 +405,203 @@ private struct ReleaseCard: View {
         }
     }
 
-    /// Albums come as folders on Soulseek, so the Search tab (with its folder results) is the
-    /// way to get one.
-    private func searchSoulseek() {
-        let title = album.title.replacingOccurrences(of: #"\s+-\s+(EP|Single)$"#, with: "", options: .regularExpression)
-        router.pendingSearch = album.artist + " " + title
-        router.tab = .search
+}
+
+/// Albums come as folders on Soulseek, so the Search tab (with its folder results) is the way
+/// to get a whole one at once.
+@MainActor
+private func searchSoulseekForAlbum(_ album: ChartAlbum, router: AppRouter) {
+    let title = album.title.replacingOccurrences(of: #"\s+-\s+(EP|Single)$"#, with: "", options: .regularExpression)
+    router.pendingSearch = album.artist + " " + title
+    router.tab = .search
+}
+
+/// A song on a release and its library copy, if you have it.
+private struct ReleaseRow: Identifiable {
+    let track: ReleaseTrack
+    let libraryTrack: Track?
+    var id: String { track.id }
+}
+
+/// A release's page: cover, the full tracklist with a tick on songs you have and a download
+/// button on the rest, Download Missing, and a Soulseek album search for the whole folder.
+private struct ReleaseDetailView: View {
+    let album: ChartAlbum
+
+    @EnvironmentObject private var trending: TrendingStore
+    @EnvironmentObject private var player: Player
+    @EnvironmentObject private var router: AppRouter
+    /// Observed so ticks appear as downloads land.
+    @EnvironmentObject private var library: LibraryStore
+    @State private var tracks: [ReleaseTrack]?
+    @State private var error: String?
+
+    var body: some View {
+        let owned = trending.libraryAlbum(for: album)
+        let rows = (tracks ?? []).map { ReleaseRow(track: $0, libraryTrack: trending.libraryTrack(for: $0)) }
+        let missing = rows.filter { $0.libraryTrack == nil }.map { $0.track }
+        let discs = Set((tracks ?? []).map(\.disc)).sorted()
+        List {
+            header(owned: owned, rows: rows, missing: missing)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+
+            if tracks != nil {
+                ForEach(discs, id: \.self) { disc in
+                    Section {
+                        ForEach(rows.filter { $0.track.disc == disc }) { item in
+                            row(item.track, libraryTrack: item.libraryTrack, rows: rows)
+                        }
+                    } header: {
+                        if discs.count > 1 { Text("Disc \(disc)") }
+                    }
+                }
+            } else if let error {
+                VStack(spacing: 10) {
+                    Text(error).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Try Again") { Task { await load() } }
+                }
+                .frame(maxWidth: .infinity)
+                .listRowSeparator(.hidden)
+            } else {
+                ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.plain)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+    }
+
+    private func header(owned: Album?, rows: [ReleaseRow], missing: [ReleaseTrack]) -> some View {
+        VStack(spacing: 10) {
+            RemoteCover(url: album.artworkURL, cornerRadius: 12)
+                .frame(width: 230, height: 230)
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+            VStack(spacing: 2) {
+                Text(album.title).font(.title3.weight(.bold)).multilineTextAlignment(.center)
+                Text(album.artist).font(.title3).foregroundStyle(.tint).multilineTextAlignment(.center)
+                Text(details(rows: rows, missing: missing))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                if tracks != nil, missing.isEmpty {
+                    Button { play(from: nil, rows: rows) } label: {
+                        Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
+                    }
+                } else {
+                    Button { downloadMissing(missing) } label: {
+                        Label(missing.isEmpty ? "Download" : "Download \(missing.count) Missing", systemImage: "arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(tracks == nil || missing.allSatisfy { trending.fetches[$0.id]?.isActive == true })
+                }
+                Button { searchSoulseekForAlbum(album, router: router) } label: {
+                    Label("Find Album", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            if let owned {
+                NavigationLink(value: owned) {
+                    Label("Open in Library", systemImage: "music.note.house")
+                        .font(.subheadline)
+                }
+            }
+            Text("Download Missing finds each song on its own; Find Album searches Soulseek for the whole album folder.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func details(rows: [ReleaseRow], missing: [ReleaseTrack]) -> String {
+        var parts: [String] = []
+        if let date = album.releaseDate { parts.append(date.formatted(.dateTime.day().month(.abbreviated).year())) }
+        if let tracks {
+            parts.append("\(tracks.count) song\(tracks.count == 1 ? "" : "s")")
+            let have = rows.count - missing.count
+            parts.append(have == 0 ? "none in your library" : "\(have) in your library")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func row(_ track: ReleaseTrack, libraryTrack: Track?, rows: [ReleaseRow]) -> some View {
+        let fetch = trending.fetches[track.id]
+        return HStack(spacing: 12) {
+            Text("\(track.number)")
+                .font(.body.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 24, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if let libraryTrack, player.current?.id == libraryTrack.id {
+                        Image(systemName: player.isPlaying ? "waveform" : "speaker.fill")
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                    }
+                    Text(track.title)
+                        .lineLimit(1)
+                        .foregroundStyle(libraryTrack == nil ? .secondary : .primary)
+                }
+                if let line = subtitle(track, fetch: fetch, inLibrary: libraryTrack != nil) {
+                    Text(line).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            if let duration = track.duration, fetch?.isActive != true {
+                Text(Formatting.duration(duration))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            FetchControl(inLibrary: libraryTrack != nil, fetch: fetch, title: track.title,
+                         onDownload: { trending.download(track) }, onCancel: { trending.cancel(track) })
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if libraryTrack != nil { play(from: track, rows: rows) } }
+    }
+
+    /// Featured artists, or download progress / why it wasn't found.
+    private func subtitle(_ track: ReleaseTrack, fetch: TrendingStore.Fetch?, inLibrary: Bool) -> String? {
+        if !inLibrary, let fetch {
+            switch fetch {
+            case .searching: return "Searching Soulseek…"
+            case let .downloading(fraction): return "Downloading \(Int(fraction * 100))%"
+            case let .failed(reason): return reason
+            case .done: break
+            }
+        }
+        return track.artist.caseInsensitiveCompare(album.artist) == .orderedSame ? nil : track.artist
+    }
+
+    /// Plays the album's songs you have, in album order, from `track` (or the start).
+    private func play(from track: ReleaseTrack?, rows: [ReleaseRow]) {
+        let playable = rows.compactMap { $0.libraryTrack }
+        guard !playable.isEmpty else { return }
+        var startIndex = 0
+        if let track, let start = rows.first(where: { $0.track.id == track.id })?.libraryTrack,
+           let position = playable.firstIndex(of: start) {
+            startIndex = position
+        }
+        player.play(playable, startAt: startIndex)
+    }
+
+    private func downloadMissing(_ missing: [ReleaseTrack]) {
+        for track in missing where trending.fetches[track.id]?.isActive != true {
+            trending.download(track)
+        }
+    }
+
+    private func load() async {
+        error = nil
+        do {
+            tracks = try await trending.tracklist(for: album)
+        } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 
