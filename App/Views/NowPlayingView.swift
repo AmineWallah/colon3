@@ -75,20 +75,23 @@ struct NowPlayingView: View {
     }
 
     private var largeArtwork: some View {
-        ZStack {
-            if let image = player.artwork {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                ArtworkPlaceholder()
+        // The square comes from Color.clear; the image sits in an overlay so an odd-shaped one
+        // can never make the layout wider than the screen.
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image = player.artwork {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    ArtworkPlaceholder()
+                }
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.35), radius: player.isPlaying ? 24 : 10, y: 12)
-        .scaleEffect(player.isPlaying ? 1 : 0.82)
-        .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
-        .frame(maxHeight: .infinity)
-        .transition(.scale(scale: 0.6).combined(with: .opacity))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: player.isPlaying ? 24 : 10, y: 12)
+            .scaleEffect(player.isPlaying ? 1 : 0.82)
+            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
+            .frame(maxHeight: .infinity)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     @ViewBuilder

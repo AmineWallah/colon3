@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import ImageIO
 import SoulseekKit
@@ -222,7 +223,43 @@ actor ArtworkStore {
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
         ] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
-        return UIImage(cgImage: image)
+        return UIImage(cgImage: squared(image))
+    }
+
+    private static let ciContext = CIContext(options: [.cacheIntermediates: false])
+
+    /// Covers that aren't square (photos of a CD and its case, 4:3 scans, …) become square: the
+    /// whole image centred, with a blurred, slightly darkened copy of itself filling the sides,
+    /// so every view, the mini player and the Lock Screen show all of it without cropping.
+    nonisolated static func squared(_ image: CGImage) -> CGImage {
+        let width = CGFloat(image.width), height = CGFloat(image.height)
+        guard width > 0, height > 0, abs(width / height - 1) > 0.02 else { return image }
+        let side = max(width, height)
+        let canvas = CGRect(x: 0, y: 0, width: side, height: side)
+
+        // Background: the cover scaled to fill the square, blurred.
+        let fill = side / min(width, height)
+        var background = CIImage(cgImage: image)
+            .transformed(by: CGAffineTransform(scaleX: fill, y: fill))
+        background = background.transformed(by: CGAffineTransform(
+            translationX: (side - width * fill) / 2, y: (side - height * fill) / 2))
+        background = background
+            .clampedToExtent()
+            .applyingGaussianBlur(sigma: Double(side) * 0.04)
+            .applyingFilter("CIColorControls", parameters: [kCIInputBrightnessKey: -0.12, kCIInputSaturationKey: 1.1])
+            .cropped(to: canvas)
+        guard let backgroundImage = ciContext.createCGImage(background, from: canvas) else { return image }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        // Drawn through UIImage so UIKit's flipped coordinates are handled for us.
+        let rendered = UIGraphicsImageRenderer(size: canvas.size, format: format).image { _ in
+            UIImage(cgImage: backgroundImage).draw(in: canvas)
+            UIImage(cgImage: image).draw(in: CGRect(x: (side - width) / 2, y: (side - height) / 2,
+                                                    width: width, height: height))
+        }
+        return rendered.cgImage ?? image
     }
 }
 

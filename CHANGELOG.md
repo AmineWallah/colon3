@@ -9,6 +9,9 @@ CI uses the section matching the build's version as the GitHub Release notes and
 - **Trending:** a new first tab with today's most played songs on Apple Music for any country, with cover art. Songs you have play with a tap; the rest have a download button that finds them on Soulseek.
 - **Import from YouTube Music:** paste a link to any public or unlisted playlist from YouTube Music or YouTube; no account or setup. Songs are matched and downloaded the same way as Spotify and Apple Music imports.
 
+### Fixed
+- **Non-square covers:** wide or tall album art (like a photo of a CD and its case) is now shown whole on a square, with a blurred copy of itself filling the sides, everywhere including the Lock Screen. Before, it was cropped, and in Now Playing it pushed the title and controls off the edges of the screen.
+
 ### Changed
 - **Software Update:** the update button now opens the release on GitHub (the latest release on Stable, the releases list on Beta). The over-the-air install page is still there as a second button.
 
