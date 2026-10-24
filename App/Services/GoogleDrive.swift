@@ -215,7 +215,7 @@ final class GoogleDrive: ObservableObject {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = HTTP.formBody(parameters)
         request.timeoutInterval = 20
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.retrying { try await URLSession.shared.data(for: request) }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
@@ -268,7 +268,7 @@ final class GoogleDrive: ObservableObject {
             var request = try make()
             let token = try await validAccessToken()
             request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await Self.retrying { try await URLSession.shared.data(for: request) }
             guard let http = response as? HTTPURLResponse else { throw DriveError.message("No reply from Google Drive.") }
             if http.statusCode == 401, !refreshed {
                 refreshed = true
@@ -429,7 +429,11 @@ final class GoogleDrive: ObservableObject {
         let token = try await validAccessToken()
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue(String(size), forHTTPHeaderField: "Content-Length")
-        let (data, response) = try await URLSession.shared.upload(for: request, fromFile: file)
+        // Only failures before anything was sent are retried: the session expects the rest of
+        // a half-sent file, not the whole thing again.
+        let (data, response) = try await Self.retrying(onlyBeforeSending: true) {
+            try await URLSession.shared.upload(for: request, fromFile: file)
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw Self.error(from: data, status: status) }
         guard let id = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["id"] as? String else {
@@ -461,7 +465,7 @@ final class GoogleDrive: ObservableObject {
         request.allowsConstrainedNetworkAccess = cellular
         let token = try await validAccessToken()
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        let (file, response) = try await URLSession.shared.download(for: request)
+        let (file, response) = try await Self.retrying { try await URLSession.shared.download(for: request) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw Self.error(from: (try? Data(contentsOf: file)) ?? Data(), status: status)
@@ -470,6 +474,30 @@ final class GoogleDrive: ObservableObject {
     }
 
     // MARK: Helpers
+
+    /// Tries again after brief network failures (a DNS lookup that failed, a dropped
+    /// connection), waiting 2, 4 and 6 seconds.
+    private static func retrying<T>(onlyBeforeSending: Bool = false,
+                                    _ operation: () async throws -> T) async throws -> T {
+        var attempt = 0
+        while true {
+            do {
+                return try await operation()
+            } catch let error as URLError where attempt < 3 && isTransient(error, onlyBeforeSending: onlyBeforeSending) {
+                attempt += 1
+                Diagnostics.shared.log("Google Drive: \(error.failingURL?.host ?? "?") failed (\(error.code.rawValue)), retrying", category: "backup")
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
+        }
+    }
+
+    private static func isTransient(_ error: URLError, onlyBeforeSending: Bool) -> Bool {
+        // Wi-Fi only (cellular or Low Data Mode not allowed): retrying won't help.
+        if error.networkUnavailableReason != nil { return false }
+        let beforeSending: [URLError.Code] = [.cannotFindHost, .dnsLookupFailed, .cannotConnectToHost, .notConnectedToInternet]
+        if onlyBeforeSending { return beforeSending.contains(error.code) }
+        return beforeSending.contains(error.code) || [.networkConnectionLost, .timedOut].contains(error.code)
+    }
 
     private static func randomString(length: Int) -> String {
         let characters = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")

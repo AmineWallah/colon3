@@ -793,6 +793,15 @@ final class BackupService: ObservableObject {
                 lastError = "Music is only sent over Wi-Fi. Connect to Wi-Fi, or turn on Use Cellular Data."
                 return
             }
+            // Name the server and the code, so a blocked address is easy to spot.
+            let host = urlError.failingURL?.host ?? "Google"
+            var text = "\(urlError.localizedDescription) (\(host), error \(urlError.code.rawValue))"
+            if urlError.code == .cannotFindHost || urlError.code == .dnsLookupFailed {
+                text += " If this keeps happening, a DNS blocker, VPN or DNS profile on this phone may be blocking \(host)."
+            }
+            lastError = text
+            Diagnostics.shared.log("Backup: \(text)", category: "backup")
+            return
         }
         lastError = error.localizedDescription
         Diagnostics.shared.log("Backup: \(error.localizedDescription)", category: "backup")
