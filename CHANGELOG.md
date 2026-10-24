@@ -3,7 +3,7 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
-## 1.1.0
+## 1.2.0
 
 ### New
 - **Home:** a new first tab laid out like Apple Music, with shelves for **Trending Songs** (new songs climbing Apple Music's chart), the **Top 100**, **Recent Releases** and **Recently Played**, for any country. Songs you have play with a tap; the rest have a download button that finds them on Soulseek. A release opens its full tracklist with a tick on the songs you have: download missing songs one by one or all at once, or search Soulseek for the whole album. Reorder or hide the shelves in Settings › Home Sections.
