@@ -1,4 +1,14 @@
-# colon3 (:3)
+<p align="center">
+  <img src="docs/logo.png" width="128" alt="colon3 icon">
+</p>
+
+<h1 align="center">colon3 (:3)</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-iOS%2018.0%2B-0a84ff" alt="Platform: iOS 18.0+">
+  <a href="https://github.com/AmineWallah/colon3/releases/latest"><img src="https://img.shields.io/github/v/release/AmineWallah/colon3?label=Latest%20release&color=brightgreen" alt="Latest release"></a>
+  <a href="https://github.com/AmineWallah/colon3/releases"><img src="https://img.shields.io/github/downloads/AmineWallah/colon3/total?label=Download&color=brightgreen" alt="Downloads"></a>
+</p>
 
 A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
 
@@ -35,6 +45,7 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
   Tests/SoulseekKitTests/            codec tests against bytes produced by Nicotine+
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
 scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
+docs/logo.png              the README's icon (AppIcon with rounded corners)
 pages/privacy.html         privacy policy, deployed to the Pages site root (linked from Google sign-in)
 project.yml                XcodeGen spec
 .github/workflows/build.yml  CI/CD: tests, IPA build, signing, install page, releases
