@@ -35,6 +35,7 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
   Tests/SoulseekKitTests/            codec tests against bytes produced by Nicotine+
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
 scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
+pages/privacy.html         privacy policy, deployed to the Pages site root (linked from Google sign-in)
 project.yml                XcodeGen spec
 .github/workflows/build.yml  CI/CD: tests, IPA build, signing, install page, releases
 ```
@@ -106,7 +107,10 @@ Backups talk to the Google Drive API directly, so the app needs an OAuth client 
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (e.g. `colon3`).
 2. **APIs & Services › Library:** find **Google Drive API** and tap **Enable**.
-3. **Google Auth Platform** (the OAuth consent screen): fill in **Branding** with the app name and your email (leave out the logo, or Google wants to review the branding first), set **Audience** to **External**, and under **Data Access** add the scope `https://www.googleapis.com/auth/drive.file`.
+3. **Google Auth Platform** (the OAuth consent screen):
+   - **Branding:** the app name and your email. Leave out the logo, or Google wants to review the branding first. Publishing also needs a homepage and a privacy policy: use the install page, `https://<user>.github.io/colon3/`, and `https://<user>.github.io/colon3/privacy.html` (from `pages/privacy.html`, deployed with the install page). Add `<user>.github.io` under **Authorized domains**.
+   - **Audience:** **External**.
+   - **Data Access:** add the scope `https://www.googleapis.com/auth/drive.file`.
 4. **Clients › Create client:** type **iOS**, bundle ID `com.aminewallah.colon3` (or your `SIGN_BUNDLE_ID`). No secret is made for iOS clients. Copy the client ID, which ends in `.apps.googleusercontent.com`.
 5. **Audience › Publish app.** While it's in Testing, only the test users you list can sign in and their sign-in expires after 7 days. `drive.file` is a non-sensitive scope, so publishing needs no review: colon3 can only see the files it creates, not the rest of anyone's Drive.
 6. Give CI the client ID (it isn't secret):

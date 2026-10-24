@@ -228,6 +228,8 @@ jobs:
             --commit "$GITHUB_SHA" \
             --notes "$notes"
           echo "Install page ($CHANNEL): $BASE/$mine" >> "$GITHUB_STEP_SUMMARY"
+          # Static pages at the site root, like the privacy policy Google's consent screen links to.
+          cp pages/*.html site/
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.check.outputs.enabled == 'true'
