@@ -55,6 +55,7 @@ struct Colon3App: App {
         _completeness = StateObject(wrappedValue: completeness)
         transferMonitor = TransferMonitor(soulseek: soulseek, player: player, stats: stats, backup: backup)
         _favorites = StateObject(wrappedValue: favorites)
+        AppServices.configure(player: player, library: library, playlists: playlists, favorites: favorites)
         _drive = StateObject(wrappedValue: drive)
         _backup = StateObject(wrappedValue: backup)
         _library = StateObject(wrappedValue: library)

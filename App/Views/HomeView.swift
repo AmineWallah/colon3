@@ -9,7 +9,7 @@ enum HomeRoute: Hashable {
 }
 
 /// The Home tab, laid out like Apple Music's: shelves for trending songs, the top 100, recent
-/// releases and what you played lately, in the order set in Settings › Home Sections.
+/// releases and what you played lately, in the order set in Settings › Appearance › Home Sections.
 struct HomeView: View {
     @EnvironmentObject private var trending: TrendingStore
     @EnvironmentObject private var player: Player
@@ -735,7 +735,7 @@ private struct CountryMenu: View {
     }
 }
 
-/// Settings › Home Sections: drag to reorder the Home shelves, switch off the ones you don't want.
+/// Settings › Appearance › Home Sections: drag to reorder the Home shelves, switch off the ones you don't want.
 struct HomeSectionsSettings: View {
     @AppStorage(HomeSection.orderKey) private var orderRaw = ""
     @AppStorage(HomeSection.hiddenKey) private var hiddenRaw = ""

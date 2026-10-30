@@ -3,6 +3,18 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
+## 1.3.0
+
+### New
+- **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3" (Siri asks what you want to hear: a song, album or artist), "Play *playlist* in colon3", "Shuffle *playlist* in colon3", "Shuffle colon3", "Play my favourites in colon3", "Pause colon3", "Next song in colon3", "Previous song in colon3" and "What's playing in colon3", with no setup. Every action is also in the Shortcuts app. The full list is in Settings › Siri & Shortcuts.
+
+### Fixed
+- **Other apps' audio:** opening colon3 no longer stops a video or music playing in another app.
+- **Voice messages:** after you pause colon3, recording a voice message (in Instagram and other apps) starts picking up your voice straight away, and colon3 no longer starts playing by itself when you send or cancel it. colon3 now hands the audio back to other apps when you pause, and only picks up again after an interruption if it was playing when it started.
+
+### Changed
+- **Settings** is split into pages: Soulseek, Transfers, Library, Playback, Appearance, Siri & Shortcuts, Last.fm, Spotify, Backup, Software Update and the logs, with the current state of each on the main list.
+
 ## 1.2.0
 
 ### New

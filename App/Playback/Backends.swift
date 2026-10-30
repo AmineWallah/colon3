@@ -42,7 +42,9 @@ final class EngineBackend: PlaybackBackend {
     var bitPerfect = false {
         didSet {
             guard bitPerfect != oldValue else { return }
-            if bitPerfect, let rate = file?.processingFormat.sampleRate {
+            requestedRate = 0
+            if bitPerfect, isPlaying, let rate = file?.processingFormat.sampleRate {
+                requestedRate = rate
                 matchHardwareRate(rate)
             } else if !bitPerfect {
                 // Back to the usual 48 kHz so other apps' audio isn't resampled oddly.
@@ -71,6 +73,11 @@ final class EngineBackend: PlaybackBackend {
     private var generation = 0
     private var lastTime: Double = 0
     private var configObserver: NSObjectProtocol?
+    /// The player node has nothing scheduled (after a pause, stop or rebuild): play() schedules
+    /// from `lastTime` first.
+    private var needsSchedule = false
+    /// The sample rate bit-perfect mode last asked the output for, so resuming doesn't ask again.
+    private var requestedRate: Double = 0
 
     init() {
         attachGraph()
@@ -107,7 +114,10 @@ final class EngineBackend: PlaybackBackend {
         }
         stopNode()
         file = newFile
-        if bitPerfect { matchHardwareRate(format.sampleRate) }
+        // Bit-perfect: the output is switched to the song's rate in play(), once the audio
+        // session is active. Doing it here would grab the audio from other apps for a song that
+        // may never be played.
+        requestedRate = 0
         if connectedFormat == nil {
             connect(format)
         } else if connectedFormat?.sampleRate != format.sampleRate || connectedFormat?.channelCount != format.channelCount {
@@ -121,7 +131,15 @@ final class EngineBackend: PlaybackBackend {
     }
 
     func play() {
-        guard file != nil else { return }
+        guard let file else { return }
+        let rate = file.processingFormat.sampleRate
+        if bitPerfect, !isPlaying, rate != requestedRate {
+            requestedRate = rate
+            matchHardwareRate(rate)
+        }
+        if needsSchedule {
+            schedule(fromFrame: AVAudioFramePosition(lastTime * rate))
+        }
         do {
             if !engine.isRunning {
                 engine.prepare()
@@ -134,10 +152,13 @@ final class EngineBackend: PlaybackBackend {
         }
     }
 
+    /// Stops the engine too, not just the player node: a running engine keeps the audio
+    /// hardware busy (playing silence), which delays other apps that want it, like a voice
+    /// message recording, and makes iOS hand it back to colon3 when they're done.
     func pause() {
         lastTime = currentTime
-        node.pause()
-        isPlaying = false
+        stopNode()
+        engine.pause()
     }
 
     func seek(to seconds: Double) {
@@ -166,7 +187,8 @@ final class EngineBackend: PlaybackBackend {
         timePitch.rate = rate
         timePitch.bypass = abs(rate - 1) < 0.001
         node.volume = 1
-        engine.mainMixerNode.outputVolume = 1
+        // The mixer isn't touched here: creating it sets up the audio output, which can take
+        // the audio from other apps at launch. connect() makes it when a song is loaded.
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
@@ -229,10 +251,12 @@ final class EngineBackend: PlaybackBackend {
         generation += 1
         node.stop()
         isPlaying = false
+        needsSchedule = true
     }
 
     private func schedule(fromFrame frame: AVAudioFramePosition) {
         guard let file else { return }
+        needsSchedule = false
         generation += 1
         let token = generation
         segmentStart = frame

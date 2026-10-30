@@ -121,6 +121,8 @@ final class Player: ObservableObject {
     private var unshuffledQueue: [Track] = []
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
+    /// Set when another app interrupts us mid-song, so only those songs resume afterwards.
+    private var resumeAfterInterruption = false
 
     private let recommender = AutoplayRecommender()
     /// The song autoplay's current list follows on from (the end of the queue when it was made).
@@ -163,7 +165,9 @@ final class Player: ObservableObject {
         engine.rate = playbackRate
         avPlayer.rate = playbackRate
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+        // Mixable until something actually plays (resume() switches to long-form playback), so
+        // opening colon3 never stops what another app is playing.
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setSupportsMultichannelContent(true)
 
         equalizer.onChange = { [weak self] in self?.applyEqualizer() }
@@ -541,10 +545,21 @@ final class Player: ObservableObject {
     }
 
     func pause() {
+        let wasPlaying = isPlaying
         backend?.pause()
         isPlaying = false
         clock.position = backend?.currentTime ?? position
         updateNowPlaying()
+        if wasPlaying { releaseAudioSession() }
+    }
+
+    /// Hands the audio back once colon3 stops playing: other apps (a voice message, a video)
+    /// get it straight away and are told they can resume. The category stays long-form
+    /// playback, so colon3 stays the Now Playing app and the Lock Screen, Control Center and
+    /// AirPods can still resume it. The background keeper takes a mixable session again if
+    /// transfers still need the app awake.
+    private func releaseAudioSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func next() {
@@ -590,6 +605,7 @@ final class Player: ObservableObject {
     }
 
     func stop() {
+        let wasPlaying = isPlaying
         backend?.stop()
         backend = nil
         queue = []
@@ -602,6 +618,7 @@ final class Player: ObservableObject {
         artwork = nil
         timer?.invalidate()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        if wasPlaying { releaseAudioSession() }
     }
 
     var artworkSource: ArtworkSource? {
@@ -737,12 +754,17 @@ final class Player: ObservableObject {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
+            resumeAfterInterruption = isPlaying
             backend?.pause()
             isPlaying = false
             updateNowPlaying()
         case .ended:
+            // Only pick up again if a song was playing when the other app took over: a paused
+            // colon3 stays paused after a call or a voice message.
             let optionsRaw = info?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-            if AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume) { resume() }
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume)
+            if resumeAfterInterruption, shouldResume { resume() }
+            resumeAfterInterruption = false
         @unknown default:
             break
         }

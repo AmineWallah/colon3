@@ -24,6 +24,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
+- **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
 
@@ -34,7 +35,7 @@ App/
   Library/                 scanning, metadata (incl. a small FLAC tag reader), albums, artwork, favourites
   Playback/                AVAudioEngine + EQ backend, AVPlayer spatial backend, queue
   Import/                  Spotify, Apple Music and YouTube Music playlist import
-  Services/                LRCLIB lyrics, Last.fm, Google Drive backup, keychain and settings
+  Services/                LRCLIB lyrics, Last.fm, Google Drive backup, Siri intents, keychain and settings
   Soulseek/                search results, downloads, cover fetching
   Views/                   SwiftUI screens
 Packages/SoulseekKit/      Protocol package (no dependencies)
@@ -190,7 +191,7 @@ Settings › Playback. With a wired USB DAC, each song's sample rate is requeste
 
 ### Wi-Fi Transfer
 
-Settings › Wi-Fi Transfer, then open the address on a computer on the same network and enter the code. Drop files or folders in, download or delete files. Over a cable on Linux: `ifuse --documents com.aminewallah.colon3 ~/iphone`.
+Settings › Transfers › Wi-Fi Transfer (or `colon3://wifi`), then open the address on a computer on the same network and enter the code. Drop files or folders in, download or delete files. Over a cable on Linux: `ifuse --documents com.aminewallah.colon3 ~/iphone`.
 
 ### Last.fm
 
@@ -224,7 +225,7 @@ Spotify only shows development-mode apps the songs of playlists **you own or col
 
 ### Home
 
-The first tab is laid out like Apple Music's, with four shelves you can reorder or hide in Settings › Home Sections:
+The first tab is laid out like Apple Music's, with four shelves you can reorder or hide in Settings › Appearance › Home Sections:
 
 - **Trending Songs:** songs on Apple Music's top 100 that came out recently (in the last 6 weeks, widening to 3 or 6 months when there are fewer than 8), in chart order.
 - **Top 100:** Apple Music's 100 most played songs.
@@ -248,6 +249,22 @@ Library › Playlists › Import from YouTube Music…, then paste a playlist li
 ### Importing from Apple Music
 
 Library › Playlists › Import from Apple Music… asks for access to your Music library and lists its playlists. They're matched and downloaded the same way. colon3 only reads song names; it can't copy Apple Music's own files.
+
+### Siri and Shortcuts
+
+These phrases work as soon as colon3 is installed (Settings › Siri & Shortcuts lists them):
+
+| Say | Does |
+|---|---|
+| "Play music in colon3" / "Resume colon3" | Resumes, or shuffles the library if nothing was queued |
+| "Play a song in colon3" | Asks what you want to hear: a song, album or artist from your library, or "*song* by *artist*" |
+| "Play *playlist* in colon3" / "Shuffle *playlist* in colon3" | Plays one of your playlists |
+| "Shuffle colon3" | Shuffles the whole library |
+| "Play my favourites in colon3" | Shuffles favourite songs and albums |
+| "Pause colon3", "Next song in colon3", "Previous song in colon3" | Transport |
+| "What's playing in colon3" | Says the current song |
+
+They're App Intents, so they need no SiriKit entitlement and work in sideloaded builds; every action also shows up in the Shortcuts app. They are audio-playback intents, so Siri can start music without bringing colon3 to the front.
 
 ### Backup
 

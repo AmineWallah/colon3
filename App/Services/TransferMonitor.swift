@@ -108,7 +108,7 @@ final class TransferMonitor {
         if wantsKeeper, !isPlaying {
             keeper.start()
         } else {
-            keeper.stop()
+            keeper.stop(releasingSession: !isPlaying)
         }
 
         guard AppSettings.flag(AppSettings.transferActivityKey) else {

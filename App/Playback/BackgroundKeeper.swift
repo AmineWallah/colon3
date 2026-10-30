@@ -8,7 +8,9 @@ import Foundation
 @MainActor
 final class BackgroundKeeper {
     private var silence: AVAudioPlayer?
-    private(set) var isRunning = false
+    /// Read from the player, so silence that another app interrupted (a call, a voice message)
+    /// counts as stopped and the next refresh starts it again.
+    var isRunning: Bool { silence?.isPlaying ?? false }
 
     func start() {
         guard !isRunning else { return }
@@ -20,13 +22,17 @@ final class BackgroundKeeper {
             silence?.numberOfLoops = -1
             silence?.volume = 0
         }
-        isRunning = silence?.play() ?? false
+        silence?.play()
     }
 
-    func stop() {
+    /// `releasingSession`: nothing else is playing, so give the audio session back too
+    /// (otherwise it stays active and other apps take longer to get the audio).
+    func stop(releasingSession: Bool) {
         guard isRunning else { return }
         silence?.stop()
-        isRunning = false
+        if releasingSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     /// One second of 8 kHz, 16-bit mono silence as an in-memory WAV file.

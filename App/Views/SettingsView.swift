@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 struct SettingsView: View {
@@ -5,145 +6,91 @@ struct SettingsView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var player: Player
     @EnvironmentObject private var lastfm: LastFM
+    @EnvironmentObject private var spotify: SpotifyService
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var server: WiFiTransferServer
     @EnvironmentObject private var drive: GoogleDrive
     @EnvironmentObject private var backup: BackupService
-
-    @AppStorage(AppSettings.artworkLookupKey) private var artworkLookup = true
-    @AppStorage(AppSettings.lyricsLookupKey) private var lyricsLookup = true
-    @AppStorage(AppSettings.scrobblingKey) private var scrobbling = true
-    @AppStorage(AppSettings.backgroundTransfersKey) private var backgroundTransfers = true
-    @AppStorage(AppSettings.transferActivityKey) private var transferActivity = true
-    @AppStorage(AppSettings.showMissingKey) private var showMissing = true
-    @AppStorage(AppSettings.musicBrainzKey) private var musicBrainz = true
-    @AppStorage(AppSettings.seedingKey) private var seeding = false
-
-    @State private var username = ""
-    @State private var password = ""
+    @EnvironmentObject private var updates: UpdateChecker
 
     var body: some View {
         NavigationStack {
             Form {
-                SoftwareUpdateSection()
-
                 Section {
                     NavigationLink { StatsView() } label: { StatsPreview() }
                 }
 
-                soulseekSection
-
-                Section("Accent Colour") {
-                    AccentPicker()
-                }
-
-                Section {
-                    NavigationLink("Home Sections") { HomeSectionsSettings() }
-                } header: {
-                    Text("Home")
-                }
-
-                Section {
-                    Toggle("Autoplay", isOn: $player.autoplay)
-                    Toggle("Autoplay Only from Library", isOn: $player.autoplayLibraryOnly)
-                        .disabled(!player.autoplay)
-                    Toggle("Download Suggestions Automatically", isOn: $player.autoplayAutoDownload)
-                        .disabled(!player.autoplay || player.autoplayLibraryOnly)
-                    NavigationLink {
-                        EqualizerView(equalizer: player.equalizer)
-                    } label: {
-                        LabeledContent("Equalizer", value: player.bitPerfect ? "Bypassed"
-                                       : (player.equalizer.isEnabled ? player.equalizer.displayName : "Off"))
-                    }
-                    Toggle("Bit-Perfect Mode", isOn: $player.bitPerfect)
-                    if player.bitPerfect {
-                        BitPerfectStatus()
-                    }
-                } header: {
-                    Text("Playback")
-                } footer: {
-                    Text("Autoplay keeps the music going when the queue ends. With a Last.fm API key (below) it picks songs similar to what you played: ones in your library play straight away; ones you don't have show under Up Next with a Download button, and play once downloaded (into the \u{201C}Found by Autoplay\u{201D} playlist). Turn on Download Suggestions Automatically to skip the button, or Only from Library to never suggest downloads. Recently played songs are skipped.\n\nBit-Perfect Mode is for USB DACs: it switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
-                }
-
-                Section {
-                    Toggle("Look Up Missing Artwork", isOn: $artworkLookup)
-                    Toggle("Fetch Lyrics", isOn: $lyricsLookup)
-                    Toggle("Show Missing Album Songs", isOn: $showMissing)
-                    Toggle("Look Up Tracklists on MusicBrainz", isOn: $musicBrainz)
-                        .disabled(!showMissing)
-                } header: {
-                    Text("Online")
-                } footer: {
-                    Text("Artwork comes from the iTunes Search API when a song has none of its own; lyrics come from LRCLIB. Missing songs come from the Soulseek folder an album was downloaded from, or from MusicBrainz otherwise.")
-                }
-
-                Section {
-                    Toggle("Keep Transfers Running in Background", isOn: $backgroundTransfers)
-                    Toggle("Show Transfers in Dynamic Island", isOn: $transferActivity)
-                    Toggle("Seeding Mode", isOn: $seeding)
-                    Button {
-                        router.showWiFiTransfer = true
-                    } label: {
-                        HStack {
-                            Label("Wi-Fi Transfer", systemImage: "wifi")
-                            Spacer()
-                            if server.isRunning {
-                                Text("On").foregroundStyle(.secondary)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                } header: {
-                    Text("Transfers")
-                } footer: {
-                    Text("When nothing is playing, colon3 plays silence (mixed under other audio) so iOS doesn't freeze transfers in the background, like iTorrent does. It costs some battery and stops when transfers finish. Seeding Mode keeps it running all the time so people can keep downloading from you, and reconnects if Soulseek drops.")
-                }
-
-                LastFMSection(scrobbling: $scrobbling)
-
-                SpotifyAccountSection()
-
-                Section {
-                    NavigationLink {
-                        BackupView()
-                    } label: {
-                        LabeledContent("Backup", value: backupStatus)
-                    }
-                } header: {
-                    Text("Backup")
-                } footer: {
-                    Text("Back up your song list, playlists, favourites, stats and settings to Google Drive or a file, and optionally the music itself.")
-                }
-
-                Section {
-                    LabeledContent("Songs", value: "\(library.tracks.count)")
-                    LabeledContent("Albums", value: "\(library.albums.count)")
-                    Button("Rescan Library") { library.rescan() }
-                    Button("Clear Artwork Cache") {
-                        Task {
-                            await ArtworkStore.shared.clearDisk()
-                            library.bumpArtwork()
+                if updateAvailable {
+                    Section {
+                        NavigationLink { SoftwareUpdateSettings() } label: {
+                            SettingsRow("Update Available", icon: "arrow.down.app.fill", color: .blue)
                         }
                     }
-                } header: {
-                    Text("Library")
-                } footer: {
-                    Text("Your music is also shared back on Soulseek while the app runs, so peers don't treat you as a leecher.")
                 }
 
                 Section {
-                    NavigationLink("Diagnostics & Logs") { DiagnosticsView() }
-                    NavigationLink("Connection Log") { LogView() }
+                    NavigationLink { SoulseekSettings() } label: {
+                        SettingsRow("Soulseek", icon: "network", color: .teal,
+                                    value: soulseek.isLoggedIn ? soulseek.username : "Offline")
+                    }
+                    NavigationLink { TransfersSettings() } label: {
+                        SettingsRow("Transfers", icon: "arrow.up.arrow.down", color: .green,
+                                    value: server.isRunning ? "Wi-Fi On" : nil)
+                    }
+                    NavigationLink { LibrarySettings() } label: {
+                        SettingsRow("Library", icon: "music.note.house.fill", color: .pink,
+                                    value: "\(library.tracks.count) songs")
+                    }
+                }
+
+                Section {
+                    NavigationLink { PlaybackSettings() } label: {
+                        SettingsRow("Playback", icon: "play.fill", color: .red,
+                                    value: player.bitPerfect ? "Bit-Perfect" : nil)
+                    }
+                    NavigationLink { AppearanceSettings() } label: {
+                        SettingsRow("Appearance", icon: "paintbrush.fill", color: .indigo)
+                    }
+                    NavigationLink { SiriSettings() } label: {
+                        SettingsRow("Siri & Shortcuts", icon: "mic.fill", color: .purple)
+                    }
+                }
+
+                Section {
+                    NavigationLink { LastFMSettings() } label: {
+                        SettingsRow("Last.fm", icon: "dot.radiowaves.left.and.right", color: .red,
+                                    value: lastfm.isConnected ? (lastfm.username ?? "On") : "Off")
+                    }
+                    NavigationLink { SpotifySettings() } label: {
+                        SettingsRow("Spotify", icon: "music.note.list", color: .green,
+                                    value: spotify.isLoggedIn ? (spotify.displayName ?? "On") : "Off")
+                    }
+                    NavigationLink { BackupView() } label: {
+                        SettingsRow("Backup", icon: "icloud.and.arrow.up.fill", color: .blue, value: backupStatus)
+                    }
+                }
+
+                Section {
+                    NavigationLink { SoftwareUpdateSettings() } label: {
+                        SettingsRow("Software Update", icon: "arrow.triangle.2.circlepath", color: .gray,
+                                    value: updates.currentVersion)
+                    }
+                    NavigationLink { DiagnosticsView() } label: {
+                        SettingsRow("Diagnostics & Logs", icon: "stethoscope", color: .gray)
+                    }
+                    NavigationLink { LogView() } label: {
+                        SettingsRow("Connection Log", icon: "list.bullet.rectangle", color: .gray)
+                    }
                 }
             }
             .navigationTitle("Settings")
             .navigationDestination(isPresented: $router.showWiFiTransfer) { WiFiTransferView() }
-            .onAppear { username = soulseek.username }
         }
+    }
+
+    private var updateAvailable: Bool {
+        if case .available = updates.state { return true }
+        return false
     }
 
     private var backupStatus: String {
@@ -151,32 +98,267 @@ struct SettingsView: View {
         guard drive.isConnected else { return backup.pending.songs.isEmpty ? "Off" : "\(backup.pending.songs.count) missing" }
         return backup.lastBackup.map { $0.formatted(.relative(presentation: .named)) } ?? "Not Yet"
     }
+}
 
-    private var soulseekSection: some View {
-        Section {
-            if soulseek.isLoggedIn {
-                Label("Logged in as \(soulseek.username)", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                ConnectionBanner()
+/// A Settings row: coloured icon, title, and an optional value on the right.
+struct SettingsRow: View {
+    let title: String
+    let icon: String
+    let color: Color
+    var value: String?
+
+    init(_ title: String, icon: String, color: Color, value: String? = nil) {
+        self.title = title
+        self.icon = icon
+        self.color = color
+        self.value = value
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 29, height: 29)
+                .background(color.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            Text(title)
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            TextField("Username", text: $username)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            SecureField("Password", text: $password)
-            Button(soulseek.isLoggedIn ? "Reconnect" : "Log In") {
-                soulseek.logIn(username: username, password: password)
-                password = ""
-            }
-            .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
-            if soulseek.isLoggedIn {
-                Button("Disconnect", role: .destructive) { soulseek.logOut() }
-            }
-        } header: {
-            Text("Soulseek")
-        } footer: {
-            Text("Logging in with an unused username registers it. There's no password reset, so pick something you'll remember.")
         }
+    }
+}
+
+// MARK: Pages
+
+struct SoulseekSettings: View {
+    @EnvironmentObject private var soulseek: SoulseekModel
+    @State private var username = ""
+    @State private var password = ""
+
+    var body: some View {
+        Form {
+            Section {
+                if soulseek.isLoggedIn {
+                    Label("Logged in as \(soulseek.username)", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    ConnectionBanner()
+                }
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $password)
+                Button(soulseek.isLoggedIn ? "Reconnect" : "Log In") {
+                    soulseek.logIn(username: username, password: password)
+                    password = ""
+                }
+                .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                if soulseek.isLoggedIn {
+                    Button("Disconnect", role: .destructive) { soulseek.logOut() }
+                }
+            } footer: {
+                Text("Logging in with an unused username registers it. There's no password reset, so pick something you'll remember.")
+            }
+        }
+        .navigationTitle("Soulseek")
+        .onAppear { username = soulseek.username }
+    }
+}
+
+struct TransfersSettings: View {
+    @EnvironmentObject private var server: WiFiTransferServer
+    @AppStorage(AppSettings.backgroundTransfersKey) private var backgroundTransfers = true
+    @AppStorage(AppSettings.transferActivityKey) private var transferActivity = true
+    @AppStorage(AppSettings.seedingKey) private var seeding = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Keep Transfers Running in Background", isOn: $backgroundTransfers)
+                Toggle("Show Transfers in Dynamic Island", isOn: $transferActivity)
+                Toggle("Seeding Mode", isOn: $seeding)
+            } footer: {
+                Text("When nothing is playing, colon3 plays silence (mixed under other audio) so iOS doesn't freeze transfers in the background, like iTorrent does. It costs some battery and stops when transfers finish. Seeding Mode keeps it running all the time so people can keep downloading from you, and reconnects if Soulseek drops.")
+            }
+            Section {
+                NavigationLink { WiFiTransferView() } label: {
+                    HStack {
+                        Label("Wi-Fi Transfer", systemImage: "wifi")
+                        Spacer()
+                        if server.isRunning {
+                            Text("On").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } footer: {
+                Text("Add or download music from a computer's browser on the same Wi-Fi.")
+            }
+        }
+        .navigationTitle("Transfers")
+    }
+}
+
+struct LibrarySettings: View {
+    @EnvironmentObject private var library: LibraryStore
+    @AppStorage(AppSettings.artworkLookupKey) private var artworkLookup = true
+    @AppStorage(AppSettings.lyricsLookupKey) private var lyricsLookup = true
+    @AppStorage(AppSettings.showMissingKey) private var showMissing = true
+    @AppStorage(AppSettings.musicBrainzKey) private var musicBrainz = true
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Songs", value: "\(library.tracks.count)")
+                LabeledContent("Albums", value: "\(library.albums.count)")
+                Button("Rescan Library") { library.rescan() }
+                Button("Clear Artwork Cache") {
+                    Task {
+                        await ArtworkStore.shared.clearDisk()
+                        library.bumpArtwork()
+                    }
+                }
+            } footer: {
+                Text("Your music is also shared back on Soulseek while the app runs, so peers don't treat you as a leecher.")
+            }
+
+            Section {
+                Toggle("Look Up Missing Artwork", isOn: $artworkLookup)
+                Toggle("Fetch Lyrics", isOn: $lyricsLookup)
+                Toggle("Show Missing Album Songs", isOn: $showMissing)
+                Toggle("Look Up Tracklists on MusicBrainz", isOn: $musicBrainz)
+                    .disabled(!showMissing)
+            } header: {
+                Text("Online")
+            } footer: {
+                Text("Artwork comes from the iTunes Search API when a song has none of its own; lyrics come from LRCLIB. Missing songs come from the Soulseek folder an album was downloaded from, or from MusicBrainz otherwise.")
+            }
+        }
+        .navigationTitle("Library")
+    }
+}
+
+struct PlaybackSettings: View {
+    @EnvironmentObject private var player: Player
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Autoplay", isOn: $player.autoplay)
+                Toggle("Autoplay Only from Library", isOn: $player.autoplayLibraryOnly)
+                    .disabled(!player.autoplay)
+                Toggle("Download Suggestions Automatically", isOn: $player.autoplayAutoDownload)
+                    .disabled(!player.autoplay || player.autoplayLibraryOnly)
+            } header: {
+                Text("Autoplay")
+            } footer: {
+                Text("Autoplay keeps the music going when the queue ends. With a Last.fm API key (Settings › Last.fm) it picks songs similar to what you played: ones in your library play straight away; ones you don't have show under Up Next with a Download button, and play once downloaded (into the \u{201C}Found by Autoplay\u{201D} playlist). Turn on Download Suggestions Automatically to skip the button, or Only from Library to never suggest downloads. Recently played songs are skipped.")
+            }
+
+            Section {
+                NavigationLink {
+                    EqualizerView(equalizer: player.equalizer)
+                } label: {
+                    LabeledContent("Equalizer", value: player.bitPerfect ? "Bypassed"
+                                   : (player.equalizer.isEnabled ? player.equalizer.displayName : "Off"))
+                }
+                Toggle("Bit-Perfect Mode", isOn: $player.bitPerfect)
+                if player.bitPerfect {
+                    BitPerfectStatus()
+                }
+            } header: {
+                Text("Sound")
+            } footer: {
+                Text("Bit-Perfect Mode is for USB DACs: it switches the output to each song's sample rate and skips the EQ and all volume processing, so the DAC gets the file's exact samples. Turn the iPhone volume all the way up and use the DAC's volume. Bluetooth, AirPlay and the speaker can't be bit-perfect.")
+            }
+        }
+        .navigationTitle("Playback")
+    }
+}
+
+struct AppearanceSettings: View {
+    var body: some View {
+        Form {
+            Section("Accent Colour") {
+                AccentPicker()
+            }
+            Section {
+                NavigationLink("Home Sections") { HomeSectionsSettings() }
+            } header: {
+                Text("Home")
+            } footer: {
+                Text("Reorder or hide the shelves on the Home tab.")
+            }
+        }
+        .navigationTitle("Appearance")
+    }
+}
+
+struct SiriSettings: View {
+    private static let phrases = [
+        "Play music in colon3",
+        "Play a song in colon3",
+        "Play <playlist> in colon3",
+        "Shuffle <playlist> in colon3",
+        "Shuffle colon3",
+        "Play my favourites in colon3",
+        "Pause colon3",
+        "Next song in colon3",
+        "Previous song in colon3",
+        "What's playing in colon3",
+    ]
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Self.phrases, id: \.self) { phrase in
+                    Text("\u{201C}\(phrase)\u{201D}")
+                }
+            } header: {
+                Text("Try Saying")
+            } footer: {
+                Text("These work without any setup. \u{201C}Play a song\u{201D} asks what you want to hear: name a song, an album or an artist from your library, or say \u{201C}<song> by <artist>\u{201D}. Siri learns your playlist names as you make them. Pause, next and previous also work with plain \u{201C}Pause\u{201D} while colon3 is playing.")
+            }
+            Section {
+                ShortcutsLink()
+                    .frame(maxWidth: .infinity)
+            } footer: {
+                Text("Every action is also in the Shortcuts app, to build your own shortcuts or automations.")
+            }
+        }
+        .navigationTitle("Siri & Shortcuts")
+    }
+}
+
+struct LastFMSettings: View {
+    @AppStorage(AppSettings.scrobblingKey) private var scrobbling = true
+
+    var body: some View {
+        Form {
+            LastFMSection(scrobbling: $scrobbling)
+        }
+        .navigationTitle("Last.fm")
+    }
+}
+
+struct SpotifySettings: View {
+    var body: some View {
+        Form {
+            SpotifyAccountSection()
+        }
+        .navigationTitle("Spotify")
+    }
+}
+
+struct SoftwareUpdateSettings: View {
+    var body: some View {
+        Form {
+            SoftwareUpdateSection()
+        }
+        .navigationTitle("Software Update")
     }
 }
 
