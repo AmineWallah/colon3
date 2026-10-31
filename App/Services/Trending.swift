@@ -162,28 +162,23 @@ final class TrendingStore: ObservableObject {
         if !force, loadedCountry == wanted, !entries.isEmpty, Date().timeIntervalSince(loadedAt) < 3600 { return }
         let token = UUID()
         loadToken = token
+        // Show the last charts saved on the phone straight away, so Home isn't an empty spinner
+        // while Apple's server is slow; the fresh ones replace them when they arrive.
+        if entries.isEmpty || loadedCountry != wanted,
+           let saved = Self.savedFeed(country: wanted, kind: "songs") {
+            show(songs: saved, albums: Self.savedFeed(country: wanted, kind: "albums")?.results ?? [])
+            loadedCountry = wanted
+        }
         isLoading = true
+        defer { if token == loadToken { isLoading = false } }
         do {
             // Albums are a bonus: the page still works if only the songs chart loads.
             async let songsFeed = Self.fetchFeed(country: wanted, kind: "songs")
             async let albumsFeed = try? Self.fetchFeed(country: wanted, kind: "albums")
             let songs = try await songsFeed
-            let songResults = songs.results
             let albumResults = (await albumsFeed)?.results ?? []
             guard token == loadToken else { return }  // A newer load (another country) takes over.
-            entries = songResults.enumerated().map { offset, result in
-                ChartEntry(id: result.id, rank: offset + 1, title: result.name, artist: result.artistName,
-                           artworkURL: Self.artwork(result.artworkUrl100, size: 300),
-                           appleMusicURL: result.url.flatMap { URL(string: $0) },
-                           releaseDate: Self.day(result.releaseDate))
-            }
-            albums = albumResults.map { result in
-                ChartAlbum(id: result.id, title: result.name, artist: result.artistName,
-                           artworkURL: Self.artwork(result.artworkUrl100, size: 600),
-                           appleMusicURL: result.url.flatMap { URL(string: $0) },
-                           releaseDate: Self.day(result.releaseDate))
-            }
-            updated = songs.updated
+            show(songs: songs, albums: albumResults)
             loadedCountry = wanted
             error = nil
             if songs.cached {
@@ -208,7 +203,22 @@ final class TrendingStore: ObservableObject {
                 }
             }
         }
-        isLoading = false
+    }
+
+    private func show(songs: FeedResult, albums albumResults: [Feed.Result]) {
+        entries = songs.results.enumerated().map { offset, result in
+            ChartEntry(id: result.id, rank: offset + 1, title: result.name, artist: result.artistName,
+                       artworkURL: Self.artwork(result.artworkUrl100, size: 300),
+                       appleMusicURL: result.url.flatMap { URL(string: $0) },
+                       releaseDate: Self.day(result.releaseDate))
+        }
+        albums = albumResults.map { result in
+            ChartAlbum(id: result.id, title: result.name, artist: result.artistName,
+                       artworkURL: Self.artwork(result.artworkUrl100, size: 600),
+                       appleMusicURL: result.url.flatMap { URL(string: $0) },
+                       releaseDate: Self.day(result.releaseDate))
+        }
+        updated = songs.updated
     }
 
     private struct Feed: Decodable {
@@ -254,6 +264,24 @@ final class TrendingStore: ObservableObject {
     /// sometimes answers 502/503 for a moment (seemingly while it rebuilds a chart), so
     /// server errors and network drops are retried twice; if it still fails, the last copy
     /// that loaded is used.
+    /// A short leash: a server that accepts the connection and then trickles (or never
+    /// answers) gives up after 25 seconds per try instead of minutes.
+    nonisolated private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 25
+        configuration.waitsForConnectivity = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
+
+    /// The last copy of a chart that loaded, if any.
+    nonisolated private static func savedFeed(country: String, kind: String) -> FeedResult? {
+        let file = cacheDirectory.appendingPathComponent("\(country)-\(kind).json")
+        guard let data = try? Data(contentsOf: file), let parsed = decode(data) else { return nil }
+        return FeedResult(results: parsed.results, updated: parsed.updated, cached: true)
+    }
+
     nonisolated private static func fetchFeed(country: String, kind: String) async throws -> FeedResult {
         guard let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/100/\(kind).json") else {
             throw TrendingError.message("Bad chart address.")
@@ -269,12 +297,16 @@ final class TrendingStore: ObservableObject {
             let data: Data
             let status: Int
             do {
-                let (body, response) = try await URLSession.shared.data(for: request)
+                let (body, response) = try await session.data(for: request)
                 data = body
                 status = (response as? HTTPURLResponse)?.statusCode ?? 0
             } catch let error as URLError where error.code != .cancelled {
+                Diagnostics.shared.log("Charts: \(country) \(kind) try \(attempt + 1): \(error.localizedDescription) (\(error.code.rawValue))", category: "charts")
                 lastError = error
                 continue
+            }
+            if status != 200 {
+                Diagnostics.shared.log("Charts: \(country) \(kind) try \(attempt + 1): HTTP \(status)", category: "charts")
             }
             if status == 404 { throw TrendingError.message("Apple has no chart for \(countryName(country)).") }
             guard status == 200 else {

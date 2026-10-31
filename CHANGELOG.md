@@ -3,6 +3,11 @@
 CI uses the section matching the build's version as the GitHub Release notes and as the
 "What's New" text in Settings › Software Update. Keep the heading format `## X.Y.Z`.
 
+## 1.3.1
+
+### Fixed
+- **Home:** the charts no longer sit on an endless spinner when Apple's chart server is slow. The last charts that loaded show straight away and are replaced when fresh ones arrive; a server that doesn't answer is given up on after 25 seconds per try, and failures are written to Diagnostics & Logs.
+
 ## 1.3.0
 
 Everything new since 1.2.0.
