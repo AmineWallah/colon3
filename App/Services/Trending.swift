@@ -181,7 +181,10 @@ final class TrendingStore: ObservableObject {
             show(songs: songs, albums: albumResults)
             loadedCountry = wanted
             error = nil
-            if songs.cached {
+            if songs.fallback {
+                loadedAt = Date().addingTimeInterval(-3000)
+                staleNote = "Apple Music's chart server isn't answering, so this is the iTunes Store chart instead. Pull down to try again."
+            } else if songs.cached {
                 // Try again sooner than the usual hour.
                 loadedAt = Date().addingTimeInterval(-3000)
                 staleNote = "Apple's chart server isn't answering, so these are the charts from "
@@ -251,6 +254,8 @@ final class TrendingStore: ObservableObject {
         let updated: Date?
         /// Read from the last copy saved on the phone because Apple's server didn't answer.
         let cached: Bool
+        /// From the old iTunes Store feed, because the Apple Music one didn't answer.
+        var fallback = false
     }
 
     nonisolated private static var cacheDirectory: URL {
@@ -321,10 +326,56 @@ final class TrendingStore: ObservableObject {
             try? data.write(to: cacheFile, options: .atomic)
             return FeedResult(results: parsed.results, updated: parsed.updated, cached: false)
         }
-        if let data = try? Data(contentsOf: cacheFile), let parsed = decode(data) {
-            return FeedResult(results: parsed.results, updated: parsed.updated, cached: true)
+        // A copy from the last few days beats a different chart; otherwise try the old iTunes
+        // Store feed (top sellers rather than most played, but current), then any old copy.
+        let saved = savedFeed(country: country, kind: kind)
+        if let saved, let updated = saved.updated, Date().timeIntervalSince(updated) < 3 * 86_400 {
+            return saved
         }
+        do {
+            let legacy = try await fetchLegacy(country: country, kind: kind)
+            if !legacy.results.isEmpty {
+                Diagnostics.shared.log("Charts: \(country) \(kind) from the iTunes Store feed instead", category: "charts")
+                return legacy
+            }
+        } catch {
+            Diagnostics.shared.log("Charts: iTunes Store feed for \(country) \(kind) failed too: \(error.localizedDescription)", category: "charts")
+        }
+        if let saved { return saved }
         throw lastError
+    }
+
+    /// The old iTunes Store RSS feed (itunes.apple.com/<cc>/rss/topsongs), as a stand-in when
+    /// the Apple Music charts are down. Different JSON: labels wrapped in {"label": …}.
+    nonisolated private static func fetchLegacy(country: String, kind: String) async throws -> FeedResult {
+        let name = kind == "songs" ? "topsongs" : "topalbums"
+        guard let url = URL(string: "https://itunes.apple.com/\(country)/rss/\(name)/limit=100/json") else {
+            throw TrendingError.message("Bad chart address.")
+        }
+        var request = URLRequest(url: url)
+        request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let feed = json["feed"] as? [String: Any] else {
+            throw TrendingError.message("The iTunes Store chart answered \(status).")
+        }
+        func label(_ value: Any?) -> String? { (value as? [String: Any])?["label"] as? String }
+        // One entry comes as an object instead of a list.
+        let entries = (feed["entry"] as? [[String: Any]]) ?? ((feed["entry"] as? [String: Any]).map { [$0] } ?? [])
+        let results: [Feed.Result] = entries.compactMap { entry in
+            let attributes = (entry["id"] as? [String: Any])?["attributes"] as? [String: Any]
+            guard let id = attributes?["im:id"] as? String,
+                  let title = label(entry["im:name"]),
+                  let artist = label(entry["im:artist"]) else { return nil }
+            let image = ((entry["im:image"] as? [[String: Any]]) ?? []).last?["label"] as? String
+            let released = label(entry["im:releaseDate"]).map { String($0.prefix(10)) }
+            return Feed.Result(id: id, name: title, artistName: artist, artworkUrl100: image,
+                               url: label(entry["id"]), releaseDate: released)
+        }
+        let updated = label(feed["updated"]).flatMap { ISO8601DateFormatter().date(from: $0) }
+        return FeedResult(results: results, updated: updated, cached: false, fallback: true)
     }
 
     nonisolated private static func decode(_ data: Data) -> (results: [Feed.Result], updated: Date?)? {
@@ -337,7 +388,10 @@ final class TrendingStore: ObservableObject {
 
     /// The feed links 100 px covers; Apple's image server makes any size from the same URL.
     nonisolated private static func artwork(_ address: String?, size: Int) -> URL? {
-        address.flatMap { URL(string: $0.replacingOccurrences(of: "100x100bb", with: "\(size)x\(size)bb")) }
+        // "…/100x100bb.jpg" in the Apple Music feed, "…/170x170bb.png" in the iTunes Store one.
+        address.flatMap {
+            URL(string: $0.replacingOccurrences(of: #"\d+x\d+bb"#, with: "\(size)x\(size)bb", options: .regularExpression))
+        }
     }
 
     /// "2026-10-16" → that day.

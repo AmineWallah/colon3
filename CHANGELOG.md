@@ -7,6 +7,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 ### Fixed
 - **Home:** the charts no longer sit on an endless spinner when Apple's chart server is slow. The last charts that loaded show straight away and are replaced when fresh ones arrive; a server that doesn't answer is given up on after 25 seconds per try, and failures are written to Diagnostics & Logs.
+- **Home when Apple Music's charts are down:** Apple's chart server has been answering "502 Bad Gateway". When it does, colon3 now uses the charts saved in the last three days, or else the old iTunes Store chart (top sellers rather than most played), and says so above the shelves.
 
 ## 1.3.0
 
