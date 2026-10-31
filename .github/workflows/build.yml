@@ -254,8 +254,11 @@ jobs:
           cp App/Assets.xcassets/AppIcon.appiconset/AppIcon.png site/icon.png
           curl -fsSL "$BASE/altstore.json" -o site/altstore.json || rm -f site/altstore.json
           gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" > "$RUNNER_TEMP/releases.json" || true
+          # --previous: releases it already lists aren't downloaded again (that would add to the
+          # download counter on every deploy).
           python3 scripts/make-altstore-source.py --releases "$RUNNER_TEMP/releases.json" \
-            --base-url "$BASE" --ipa-dir "$RUNNER_TEMP/ipas" --out "$RUNNER_TEMP/altstore.json" \
+            --base-url "$BASE" --ipa-dir "$RUNNER_TEMP/ipas" --previous site/altstore.json \
+            --out "$RUNNER_TEMP/altstore.json" \
             && cp "$RUNNER_TEMP/altstore.json" site/altstore.json \
             || echo "::warning::AltStore source not updated; keeping the previous one."
 

@@ -8,9 +8,11 @@ Pages deploy, from the releases list:
     gh api "repos/OWNER/REPO/releases?per_page=30" > releases.json
     scripts/make-altstore-source.py --releases releases.json --base-url https://… --out site/altstore.json
 
-Each release's unsigned IPA is downloaded once to read its exact version, build number and
-usage descriptions: AltStore refuses an install when the source's version or permissions
-don't match the IPA.
+Each release's unsigned IPA is read for its exact version, build number and usage
+descriptions: AltStore refuses an install when the source's version or permissions don't match
+the IPA. Downloads count towards the release's download number, so releases already in the
+previous source (--previous, the live altstore.json) are reused instead of downloaded again:
+CI downloads each release once.
 """
 
 import argparse
@@ -76,6 +78,7 @@ def main():
     parser.add_argument("--base-url", required=True, help="Pages URL the source and icon are served from")
     parser.add_argument("--repo-url", default="https://github.com/AmineWallah/colon3")
     parser.add_argument("--ipa-dir", help="where to keep downloaded IPAs (default: a temp folder)")
+    parser.add_argument("--previous", help="the current altstore.json, to reuse what it already knows")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -88,12 +91,38 @@ def main():
     stable = [r for r in releases if not r.get("draft") and not r.get("prerelease")]
     stable.sort(key=lambda r: r.get("published_at") or "", reverse=True)
 
+    # What the previous source already read from each IPA, by download URL.
+    known = {}
+    known_privacy = None
+    known_bundle_id = None
+    if args.previous and os.path.exists(args.previous):
+        try:
+            with open(args.previous) as handle:
+                previous_app = json.load(handle)["apps"][0]
+            known = {v["downloadURL"]: v for v in previous_app.get("versions", [])}
+            known_privacy = previous_app.get("appPermissions", {}).get("privacy")
+            known_bundle_id = previous_app.get("bundleIdentifier")
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f"warning: ignoring the previous source: {error}", file=sys.stderr)
+
     versions = []
     privacy = {}
     bundle_id = "com.aminewallah.colon3"
     for release in stable:
         asset = next((a for a in release.get("assets", []) if ASSET.match(a.get("name", ""))), None)
         if asset is None:
+            continue
+        reused = known.get(asset["browser_download_url"])
+        if reused and known_privacy is not None:
+            if not versions:
+                privacy = known_privacy
+                bundle_id = known_bundle_id or bundle_id
+            version = dict(reused)
+            # Notes can be edited on GitHub after the fact.
+            version["localizedDescription"] = clean_notes(release.get("body"))
+            versions.append(version)
+            if len(versions) == MAX_VERSIONS:
+                break
             continue
         try:
             path = download(asset["browser_download_url"], ipa_dir)
