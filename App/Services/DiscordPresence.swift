@@ -561,7 +561,7 @@ final class SocialSDKBackend: DiscordBackend {
     }
 
     func connect(token: String, completion: @escaping (String?) -> Void) {
-        bridge.connect(withAccessToken: token) { error in completion(error) }
+        bridge.connect(accessToken: token) { error in completion(error) }
     }
 
     func updateToken(_ token: String) { bridge.updateAccessToken(token) }
@@ -569,13 +569,13 @@ final class SocialSDKBackend: DiscordBackend {
     func runCallbacks() { bridge.runCallbacks() }
 
     func setPresence(_ content: DiscordPresence.Content, listening: Bool, completion: @escaping (String?) -> Void) {
-        bridge.setPresence(withTitle: content.title,
-                           artist: content.artist,
-                           album: content.album,
-                           imageURL: content.coverURL,
-                           startMilliseconds: content.startMs,
-                           endMilliseconds: content.endMs,
-                           listening: listening) { error in completion(error) }
+        bridge.setPresence(title: content.title,
+                       artist: content.artist,
+                       album: content.album,
+                       imageURL: content.coverURL,
+                       startMilliseconds: content.startMs,
+                       endMilliseconds: content.endMs,
+                       listening: listening) { error in completion(error) }
     }
 
     func clearPresence() { bridge.clearPresence() }

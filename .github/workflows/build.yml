@@ -117,7 +117,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             ${extra[@]+"${extra[@]}"} \
             | tee xcodebuild.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/colon3.app
+          # The executable, not just the folder: a failed build can leave an empty colon3.app.
+          test -f build/Build/Products/Release-iphoneos/colon3.app/colon3
 
       - name: Package IPA
         run: |
