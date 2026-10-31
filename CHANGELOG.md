@@ -5,19 +5,25 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 ## 1.3.0
 
+Everything new since 1.2.0.
+
 ### New
-- **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3" (Siri asks what you want to hear: a song, album or artist), "Play *playlist* in colon3", "Shuffle *playlist* in colon3", "Shuffle colon3", "Play my favourites in colon3", "Pause colon3", "Next song in colon3", "Previous song in colon3" and "What's playing in colon3", with no setup. Every action is also in the Shortcuts app. The full list is in Settings › Siri & Shortcuts.
-
-- **Discord:** show what you're listening to on your Discord profile: "Listening to *artist*" with the song, album, cover and a progress bar, like Spotify does. Sign in once in Settings › Discord: no token and no developer app of your own. It shows while a song plays and clears when you pause. Covers come from Apple's catalogue, since Discord can only show images from the web.
-
-- **AltStore and SideStore source:** add `https://aminewallah.github.io/colon3/altstore.json` under Sources to install colon3 from the store and get updates there.
+- **Siri and Shortcuts:** control colon3 by voice, with no setup:
+  - "Play music in colon3" resumes, or shuffles your library if nothing was queued.
+  - "Play a song in colon3": Siri asks what you want to hear. Name a song, an album or an artist from your library, or say "*song* by *artist*".
+  - "Play *playlist* in colon3" and "Shuffle *playlist* in colon3". Siri learns your playlist names as you make them.
+  - "Shuffle colon3", "Play my favourites in colon3", "Pause colon3", "Next song in colon3", "Previous song in colon3" and "What's playing in colon3".
+  - Every action is also in the Shortcuts app, and Siri can start music without opening colon3. The full list is in Settings › Siri & Shortcuts.
+- **Discord:** show what you're listening to on your Discord profile, like Spotify does: "Listening to *artist*" with the song, album, cover and a progress bar. Sign in once in Settings › Discord; no token and no developer app of your own, unlike the old Discord status removed in 1.0.0. It shows while a song plays and clears when you pause. Covers come from Apple's catalogue, since Discord can only show images from the web.
+- **AltStore and SideStore:** colon3 has its own source. Add `https://aminewallah.github.io/colon3/altstore.json` under Sources to install it from the store and get every new release under Updates.
 
 ### Fixed
 - **Other apps' audio:** opening colon3 no longer stops a video or music playing in another app.
-- **Voice messages:** after you pause colon3, recording a voice message (in Instagram and other apps) starts picking up your voice straight away, and colon3 no longer starts playing by itself when you send or cancel it. colon3 now hands the audio back to other apps when you pause, and only picks up again after an interruption if it was playing when it started.
+- **Voice messages and calls:** after you pause colon3, a voice message (in Instagram and other apps) picks up your voice straight away, and colon3 no longer starts playing by itself when you send or cancel it. colon3 now hands the audio back when you pause, and after an interruption it only resumes if it was playing when the interruption started.
+- **Background transfers after an interruption:** downloads kept in the background by Keep Transfers Running in Background now carry on after a call or voice message, instead of stalling until you open the app.
 
 ### Changed
-- **Settings** is split into pages: Soulseek, Transfers, Library, Playback, Appearance, Siri & Shortcuts, Last.fm, Spotify, Backup, Software Update and the logs, with the current state of each on the main list.
+- **Settings** is split into pages with icons, each showing its current state on the main list: Soulseek, Transfers, Library, Playback, Appearance, Siri & Shortcuts, Last.fm, Discord, Spotify, Backup, Software Update and the logs. An "Update Available" row appears at the top when there is one.
 
 ## 1.2.0
 

@@ -8,6 +8,7 @@
   <img src="https://img.shields.io/badge/Platform-iOS%2018.0%2B-0a84ff" alt="Platform: iOS 18.0+">
   <a href="https://github.com/AmineWallah/colon3/releases/latest"><img src="https://img.shields.io/github/v/release/AmineWallah/colon3?label=Latest%20release&color=brightgreen" alt="Latest release"></a>
   <a href="https://github.com/AmineWallah/colon3/releases"><img src="https://img.shields.io/github/downloads/AmineWallah/colon3/total?label=Download&color=brightgreen" alt="Downloads"></a>
+  <a href="https://aminewallah.github.io/colon3/source.html"><img src="https://img.shields.io/badge/AltStore%20%2F%20SideStore-Add%20source-8e44ad" alt="Add the AltStore / SideStore source"></a>
 </p>
 
 A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
@@ -19,7 +20,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Artwork:** a cover you picked (Photos or Files), then cover files from the album folder, then art embedded in the music, then an iTunes lookup. Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
 - **Player:** Apple Music-style full screen with synced lyrics (a .lrc next to the song, else LRCLIB), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
 - **Autoplay:** when the queue ends, similar songs keep playing (Last.fm similar tracks and artists, else the same artist, most played or random). Picks you don't have get a Download button (or download on their own, if you turn that on) and play once they're downloaded from Soulseek.
-- **Sound:** 10-band EQ with presets, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
+- **Sound:** a 10-band graphic EQ with presets, a parametric EQ that loads your headphones' AutoEQ profile, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
@@ -29,6 +30,21 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/player.jpg" width="250" alt="Main player"><br><b>Main player</b></td>
+    <td align="center"><img src="docs/screenshots/lyrics.jpg" width="250" alt="Lyrics display"><br><b>Lyrics display</b></td>
+    <td align="center"><img src="docs/screenshots/autoplay.jpg" width="250" alt="Autoplay"><br><b>Autoplay</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/search.jpg" width="250" alt="Soulseek browsing"><br><b>Soulseek browsing</b></td>
+    <td align="center"><img src="docs/screenshots/library.jpg" width="250" alt="Album browser"><br><b>Album browser</b></td>
+    <td align="center"><img src="docs/screenshots/equalizer.jpg" width="250" alt="Built-in EQ"><br><b>Built-in EQ</b></td>
+  </tr>
+</table>
 
 ## Layout
 
@@ -52,7 +68,9 @@ scripts/fetch-discord-sdk.sh  CI: fetches Discord's Social SDK from a private re
 scripts/make-altstore-source.py  CI: builds the AltStore / SideStore source from the GitHub releases
 DiscordBridge/             Objective-C++ bridge to Discord's SDK (only built with project-discord.yml)
 docs/logo.png              the README's icon (AppIcon with rounded corners)
+docs/screenshots/          the README's screenshots
 pages/privacy.html         privacy policy, deployed to the Pages site root (linked from Google sign-in)
+pages/source.html          "Add to AltStore / SideStore" page for the source
 project.yml                XcodeGen spec
 project-discord.yml        project.yml plus Discord's SDK, used by CI when it has the SDK
 .github/workflows/build.yml  CI/CD: tests, IPA build, signing, install page, releases
@@ -199,7 +217,7 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
 
 ### AltStore and SideStore
 
-In AltStore or SideStore, open **Sources**, tap **+** and add:
+On your iPhone, open [the source page](https://aminewallah.github.io/colon3/source.html) and tap **Add to AltStore** or **Add to SideStore**. Or, in the app, open **Sources**, tap **+** and add:
 
 ```
 https://aminewallah.github.io/colon3/altstore.json

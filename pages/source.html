@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add colon3 to AltStore or SideStore</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --accent: #0a84ff; --field: #f2f2f7; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #000; --card: #1c1c1e; --text: #f5f5f7; --muted: #98989d; --field: #2c2c2e; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.45 -apple-system, system-ui, sans-serif; }
+  main { max-width: 460px; margin: 0 auto; padding: 48px 16px; }
+  .card { background: var(--card); border-radius: 18px; padding: 28px 22px; text-align: center; }
+  .icon { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 2px 10px rgba(0, 0, 0, .15); }
+  h1 { margin: 16px 0 4px; font-size: 28px; }
+  .meta { color: var(--muted); font-size: 15px; margin: 0 0 24px; }
+  .button { display: block; text-align: center; color: #fff; text-decoration: none; font-weight: 600;
+            padding: 15px; border-radius: 14px; margin: 0 0 12px; }
+  .altstore { background: #018084; }
+  .sidestore { background: #8e44ad; }
+  .url { display: flex; gap: 8px; align-items: center; background: var(--field); border-radius: 12px;
+         padding: 10px 12px; margin: 22px 0 8px; text-align: left; }
+  .url code { flex: 1; font-size: 13px; overflow-wrap: anywhere; }
+  .url button { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; padding: 4px; }
+  .note { color: var(--muted); font-size: 14px; text-align: left; margin: 18px 0 0; }
+  a.link { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<div class="card">
+  <img class="icon" src="icon.png" alt="">
+  <h1>colon3</h1>
+  <p class="meta">Soulseek client and music player for iOS</p>
+
+  <a class="button altstore" id="altstore" href="#">Add to AltStore</a>
+  <a class="button sidestore" id="sidestore" href="#">Add to SideStore</a>
+
+  <div class="url">
+    <code id="source"></code>
+    <button type="button" id="copy">Copy</button>
+  </div>
+
+  <p class="note">Open this page on your iPhone with AltStore or SideStore installed. The buttons add the colon3 source; then install colon3 from it, and new releases show up under Updates. Or copy the address and add it under Sources › +.</p>
+  <p class="note"><a class="link" href="https://github.com/AmineWallah/colon3">colon3 on GitHub</a> · <a class="link" href="privacy.html">Privacy</a></p>
+</div>
+</main>
+<script>
+  // The source sits next to this page, wherever the site is hosted.
+  const source = new URL("altstore.json", location.href).href;
+  const encoded = encodeURIComponent(source);
+  document.getElementById("source").textContent = source;
+  document.getElementById("altstore").href = "altstore://source?url=" + encoded;
+  document.getElementById("sidestore").href = "sidestore://source?url=" + encoded;
+  const copy = document.getElementById("copy");
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(source);
+      copy.textContent = "Copied";
+    } catch {
+      copy.textContent = "Select it";
+    }
+    setTimeout(() => { copy.textContent = "Copy"; }, 2000);
+  });
+</script>
+</body>
+</html>
