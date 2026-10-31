@@ -8,7 +8,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 ### New
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3" (Siri asks what you want to hear: a song, album or artist), "Play *playlist* in colon3", "Shuffle *playlist* in colon3", "Shuffle colon3", "Play my favourites in colon3", "Pause colon3", "Next song in colon3", "Previous song in colon3" and "What's playing in colon3", with no setup. Every action is also in the Shortcuts app. The full list is in Settings › Siri & Shortcuts.
 
-- **Discord:** show what you're listening to on your Discord profile, with the song, artist, album cover and a progress bar, like Spotify does. Sign in once in Settings › Discord: no token and no developer app of your own. It shows while a song plays and clears when you pause. Covers come from Apple's catalogue, since Discord can only show images from the web.
+- **Discord:** show what you're listening to on your Discord profile: "Listening to *artist*" with the song, album, cover and a progress bar, like Spotify does. Sign in once in Settings › Discord: no token and no developer app of your own. It shows while a song plays and clears when you pause. Covers come from Apple's catalogue, since Discord can only show images from the web.
 
 ### Fixed
 - **Other apps' audio:** opening colon3 no longer stops a video or music playing in another app.

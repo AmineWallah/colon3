@@ -28,17 +28,20 @@ NS_ASSUME_NONNULL_BEGIN
 /// Runs the SDK's pending callbacks (on the calling thread). Call it a few times a second.
 - (void)runCallbacks;
 
-/// Sets the activity. Times are milliseconds since 1970 (0 to leave out). `listening` uses
-/// the Listening activity type, otherwise Playing.
-- (void)setPresenceWithTitle:(NSString *)title
-                      artist:(NSString *)artist
-                       album:(nullable NSString *)album
-                    imageURL:(nullable NSString *)imageURL
-           startMilliseconds:(int64_t)start
-             endMilliseconds:(int64_t)end
-                   listening:(BOOL)listening
-                  completion:(void (^)(NSString *_Nullable error))completion
-    NS_SWIFT_NAME(setPresence(title:artist:album:imageURL:startMilliseconds:endMilliseconds:listening:completion:));
+/// Sets the activity. `name` replaces the app's name in "Listening to …" (nil keeps "colon3");
+/// `details` and `state` are the two lines under it; `largeText` shows on the cover. Times are
+/// milliseconds since 1970 (0 to leave out). `listening` uses the Listening activity type,
+/// otherwise Playing.
+- (void)setPresenceWithName:(nullable NSString *)name
+                    details:(NSString *)details
+                      state:(NSString *)state
+                  largeText:(nullable NSString *)largeText
+                   imageURL:(nullable NSString *)imageURL
+          startMilliseconds:(int64_t)start
+            endMilliseconds:(int64_t)end
+                  listening:(BOOL)listening
+                 completion:(void (^)(NSString *_Nullable error))completion
+    NS_SWIFT_NAME(setPresence(name:details:state:largeText:imageURL:startMilliseconds:endMilliseconds:listening:completion:));
 - (void)clearPresence;
 
 @end

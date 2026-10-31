@@ -88,18 +88,22 @@ static NSString *C3NSString(const std::string &text) {
     discordpp::RunCallbacks();
 }
 
-- (void)setPresenceWithTitle:(NSString *)title
-                      artist:(NSString *)artist
-                       album:(nullable NSString *)album
-                    imageURL:(nullable NSString *)imageURL
-           startMilliseconds:(int64_t)start
-             endMilliseconds:(int64_t)end
-                   listening:(BOOL)listening
-                  completion:(void (^)(NSString *_Nullable))completion {
+- (void)setPresenceWithName:(nullable NSString *)name
+                    details:(NSString *)details
+                      state:(NSString *)state
+                  largeText:(nullable NSString *)largeText
+                   imageURL:(nullable NSString *)imageURL
+          startMilliseconds:(int64_t)start
+            endMilliseconds:(int64_t)end
+                  listening:(BOOL)listening
+                 completion:(void (^)(NSString *_Nullable))completion {
     discordpp::Activity activity;
     activity.SetType(listening ? discordpp::ActivityTypes::Listening : discordpp::ActivityTypes::Playing);
-    activity.SetDetails(C3String(title));
-    activity.SetState(C3String(artist));
+    if (name.length > 0) {
+        activity.SetName(C3String(name));
+    }
+    activity.SetDetails(C3String(details));
+    activity.SetState(C3String(state));
     // The short status next to your name shows the song, not "colon3".
     activity.SetStatusDisplayType(discordpp::StatusDisplayTypes::Details);
 
@@ -107,8 +111,8 @@ static NSString *C3NSString(const std::string &text) {
     if (imageURL.length > 0) {
         assets.SetLargeImage(C3String(imageURL));
     }
-    if (album.length > 0) {
-        assets.SetLargeText(C3String(album));
+    if (largeText.length > 0) {
+        assets.SetLargeText(C3String(largeText));
     }
     activity.SetAssets(assets);
 

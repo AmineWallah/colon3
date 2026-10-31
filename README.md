@@ -24,7 +24,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
-- **Discord:** "Listening to colon3" on your profile with the song, artist and album cover, after signing in once (builds made with Discord's SDK).
+- **Discord:** "Listening to *artist*" on your profile with the song, album and cover, after signing in once (builds made with Discord's SDK).
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
@@ -295,9 +295,9 @@ They're App Intents, so they need no SiriKit entitlement and work in sideloaded 
 
 ### Discord
 
-Settings › Discord › **Connect Discord** signs in through Discord's website (or a Discord login already in Safari) and turns it on. While a song plays, your profile shows "Listening to colon3" with the song, artist, album cover and progress, and the status next to your name shows the song title. Pausing clears it. Covers are looked up in Apple's catalogue (the iTunes Search API), because Discord can only load images from the web; songs it can't find show the colon3 icon.
+Settings › Discord › **Connect Discord** signs in through Discord's website (or a Discord login already in Safari) and turns it on. While a song plays, your profile shows "Listening to *artist*" with the song, album, cover and progress, and the status next to your name shows the song title. Pausing clears it. Covers are looked up in Apple's catalogue (the iTunes Search API), because Discord can only load images from the web; songs it can't find show the colon3 icon.
 
-Discord's SDK documentation calls "Playing" the activity type that matters for it; colon3 asks for "Listening" first and, if Discord turns that down, falls back to "Playing colon3" and says so in Settings (with a button to try Listening again). It keeps working in the background as long as music plays, since that's what keeps colon3 running.
+Discord's SDK documentation calls "Playing" the activity type that matters for it; colon3 asks for "Listening to *artist*" first. If Discord won't take the artist as the activity's name it uses "Listening to colon3" (with the artist under the song), and if it won't take "Listening" at all, "Playing colon3", saying so in Settings with a button to try again. It keeps working in the background as long as music plays, since that's what keeps colon3 running.
 
 ### Backup
 
