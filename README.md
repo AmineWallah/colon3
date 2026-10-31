@@ -25,6 +25,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
 - **Discord:** "Listening to *artist*" on your profile with the song, album and cover, after signing in once (builds made with Discord's SDK).
+- **AltStore and SideStore:** add the colon3 source and get updates in the store.
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
@@ -48,6 +49,7 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
 scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
 scripts/fetch-discord-sdk.sh  CI: fetches Discord's Social SDK from a private repository
+scripts/make-altstore-source.py  CI: builds the AltStore / SideStore source from the GitHub releases
 DiscordBridge/             Objective-C++ bridge to Discord's SDK (only built with project-discord.yml)
 docs/logo.png              the README's icon (AppIcon with rounded corners)
 pages/privacy.html         privacy policy, deployed to the Pages site root (linked from Google sign-in)
@@ -193,7 +195,21 @@ This builds version 0.2.0 and attaches `colon3-0.2.0-unsigned.ipa` to a GitHub R
   cd ~/colon3-dist && python3 -m http.server 8000
   ```
   Serve only that output folder, never your home or Downloads folder. Stop both servers when you're done.
-- **SideStore / AltStore:** open the unsigned IPA from a release or workflow artifact. They sign it with your Apple ID on-device. Free accounts: 7-day expiry, 3 apps max.
+- **SideStore / AltStore:** add the colon3 source (below) for updates in the store, or open the unsigned IPA from a release or workflow artifact. They sign it with your Apple ID on-device. Free accounts: 7-day expiry, 3 apps max.
+
+### AltStore and SideStore
+
+In AltStore or SideStore, open **Sources**, tap **+** and add:
+
+```
+https://aminewallah.github.io/colon3/altstore.json
+```
+
+Then install colon3 from it. New stable releases show up under **Updates**, and the store's weekly refresh keeps the signature alive. The source lists the last five stable releases (beta builds stay on the install page).
+
+The store signs colon3 with your own Apple ID. With a free account that means at most 3 sideloaded apps at once, a refresh every 7 days, and colon3 uses 2 of the 10 App IDs a week allows (the app and its Live Activity widget). The store also changes the bundle ID; Google Drive backup and Discord sign-in still work, since both sign in through a web page.
+
+For maintainers: CI builds `altstore.json` with every Pages deploy from the GitHub releases (`scripts/make-altstore-source.py` reads each release's IPA for its exact version, build number and usage descriptions, which AltStore checks before installing). Tagging a release asks for a main build afterwards so the new version appears without another push.
 
 ## Using it
 

@@ -10,6 +10,8 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 - **Discord:** show what you're listening to on your Discord profile: "Listening to *artist*" with the song, album, cover and a progress bar, like Spotify does. Sign in once in Settings › Discord: no token and no developer app of your own. It shows while a song plays and clears when you pause. Covers come from Apple's catalogue, since Discord can only show images from the web.
 
+- **AltStore and SideStore source:** add `https://aminewallah.github.io/colon3/altstore.json` under Sources to install colon3 from the store and get updates there.
+
 ### Fixed
 - **Other apps' audio:** opening colon3 no longer stops a video or music playing in another app.
 - **Voice messages:** after you pause colon3, recording a voice message (in Instagram and other apps) starts picking up your voice straight away, and colon3 no longer starts playing by itself when you send or cancel it. colon3 now hands the audio back to other apps when you pause, and only picks up again after an interruption if it was playing when it started.
