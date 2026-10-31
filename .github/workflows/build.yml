@@ -75,17 +75,33 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Fetch Discord Social SDK
+        # Optional: only with the private SDK repository set up (see README). Pull requests from
+        # forks get no secrets and build without Discord.
+        env:
+          DISCORD_SDK_REPO: ${{ vars.DISCORD_SDK_REPO }}
+          DISCORD_SDK_TOKEN: ${{ secrets.DISCORD_SDK_TOKEN }}
+        run: scripts/fetch-discord-sdk.sh
+
       - name: Generate project
-        run: xcodegen generate
+        run: |
+          if [ -d Vendor/discord_partner_sdk.xcframework ]; then
+            echo "Building with Discord Rich Presence"
+            xcodegen generate --spec project-discord.yml
+          else
+            xcodegen generate
+          fi
 
       - name: Build
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          DISCORD_APP_ID: ${{ vars.DISCORD_APP_ID }}
         run: |
           set -o pipefail
           # Google Drive backups need the iOS OAuth client ID (a repository variable; not secret).
           extra=()
           if [ -n "$GOOGLE_CLIENT_ID" ]; then extra+=("COLON3_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"); fi
+          if [ -n "$DISCORD_APP_ID" ]; then extra+=("COLON3_DISCORD_APP_ID=$DISCORD_APP_ID"); fi
           xcodebuild build \
             -project colon3.xcodeproj \
             -scheme colon3 \

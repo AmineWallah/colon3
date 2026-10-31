@@ -32,6 +32,9 @@ targets:
         # Google Drive backups: the iOS OAuth client ID from Google Cloud (see the README).
         # CI fills it from the GOOGLE_CLIENT_ID repository variable.
         Colon3GoogleClientID: "$(COLON3_GOOGLE_CLIENT_ID)"
+        # Discord Rich Presence: the Discord application ID (CI fills it from DISCORD_APP_ID).
+        # The SDK itself only goes in when CI can fetch it (project-discord.yml).
+        Colon3DiscordAppID: "$(COLON3_DISCORD_APP_ID)"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
@@ -68,6 +71,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         COLON3_CHANNEL: stable
         COLON3_GOOGLE_CLIENT_ID: ""
+        COLON3_DISCORD_APP_ID: ""
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic

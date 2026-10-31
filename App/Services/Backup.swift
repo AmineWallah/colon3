@@ -178,7 +178,7 @@ final class BackupService: ObservableObject {
         "eq.peqProfiles", "eq.preamp", "eq.preset", "playback.rate", "search.filters.v2",
         "missing.hiddenAlbums", "spotify.clientID", "update.automatic", "update.channel", "username",
         "import.playlists", "autoplay.discoveriesPlaylist",
-        "backup.automatic", "backup.includeMusic", "backup.cellular",
+        "backup.automatic", "backup.includeMusic", "backup.cellular", "discord.enabled",
     ]
 
     let drive: GoogleDrive

@@ -24,6 +24,7 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Stats:** listening time, top songs/artists/albums, upload/download totals.
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.
+- **Discord:** "Listening to colon3" on your profile with the song, artist and album cover, after signing in once (builds made with Discord's SDK).
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
@@ -46,9 +47,12 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
   Tests/SoulseekKitTests/            codec tests against bytes produced by Nicotine+
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
 scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
+scripts/fetch-discord-sdk.sh  CI: fetches Discord's Social SDK from a private repository
+DiscordBridge/             Objective-C++ bridge to Discord's SDK (only built with project-discord.yml)
 docs/logo.png              the README's icon (AppIcon with rounded corners)
 pages/privacy.html         privacy policy, deployed to the Pages site root (linked from Google sign-in)
 project.yml                XcodeGen spec
+project-discord.yml        project.yml plus Discord's SDK, used by CI when it has the SDK
 .github/workflows/build.yml  CI/CD: tests, IPA build, signing, install page, releases
 ```
 
@@ -132,6 +136,29 @@ Backups talk to the Google Drive API directly, so the app needs an OAuth client 
    For a local build, put it in `COLON3_GOOGLE_CLIENT_ID` in `project.yml` instead.
 
 A build without a client ID still has Settings › Backup: it asks for one there, and backup files work without Google at all.
+
+### One-time setup for Discord
+
+Discord Rich Presence uses Discord's Social SDK. Users just tap Connect Discord; you set up one Discord application and give CI the SDK. The SDK is closed source and its terms don't allow redistributing it, so it never goes in this repository: CI downloads it from a **private** repository of yours. Builds without it work normally and say so in Settings › Discord.
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application named **colon3** and give it the app icon (the presence falls back to it when a song has no cover online).
+2. **Getting Started / Social SDK:** enable the Social SDK for the application (fill in the short form if asked).
+3. **OAuth2:** add the redirect `discord-<APPLICATION_ID>:/authorize/callback` and turn on **Public Client** (colon3 has no server, so it signs in with PKCE like the Google and Spotify logins).
+4. **Downloads:** download the Social SDK for **iOS** (a zip with `discord_partner_sdk.xcframework`).
+5. Make a private repository and attach the zip to a release there:
+   ```sh
+   gh repo create colon3-vendor --private
+   gh release create discord-sdk --repo <user>/colon3-vendor --title "Discord Social SDK" ~/Downloads/DiscordSocialSdk-*.zip
+   ```
+   For a new SDK version, upload a new release; CI takes the latest one.
+6. Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to **only** that repository and **Contents: Read-only**, then give CI the token, the repository and the application ID:
+   ```sh
+   gh secret set DISCORD_SDK_TOKEN            # paste the token
+   gh variable set DISCORD_SDK_REPO --body <user>/colon3-vendor
+   gh variable set DISCORD_APP_ID --body <APPLICATION_ID>
+   ```
+
+The next build logs "Building with Discord Rich Presence". The privacy policy page already covers what's sent to Discord.
 
 ### Beta channel
 
@@ -265,6 +292,12 @@ These phrases work as soon as colon3 is installed (Settings › Siri & Shortcuts
 | "What's playing in colon3" | Says the current song |
 
 They're App Intents, so they need no SiriKit entitlement and work in sideloaded builds; every action also shows up in the Shortcuts app. They are audio-playback intents, so Siri can start music without bringing colon3 to the front.
+
+### Discord
+
+Settings › Discord › **Connect Discord** signs in through Discord's website (or a Discord login already in Safari) and turns it on. While a song plays, your profile shows "Listening to colon3" with the song, artist, album cover and progress, and the status next to your name shows the song title. Pausing clears it. Covers are looked up in Apple's catalogue (the iTunes Search API), because Discord can only load images from the web; songs it can't find show the colon3 icon.
+
+Discord's SDK documentation calls "Playing" the activity type that matters for it; colon3 asks for "Listening" first and, if Discord turns that down, falls back to "Playing colon3" and says so in Settings (with a button to try Listening again). It keeps working in the background as long as music plays, since that's what keeps colon3 running.
 
 ### Backup
 

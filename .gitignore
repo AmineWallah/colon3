@@ -14,3 +14,6 @@ site/
 *.p12
 *.mobileprovision
 *.cer
+
+# Discord Social SDK (closed source, fetched by CI)
+Vendor/

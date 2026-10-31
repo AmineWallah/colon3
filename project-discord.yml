@@ -1,0 +1,21 @@
+# project.yml plus Discord's Social SDK, for Rich Presence. CI uses this spec instead of
+# project.yml when it could fetch the SDK into Vendor/ (scripts/fetch-discord-sdk.sh):
+#   xcodegen generate --spec project-discord.yml
+# The SDK is closed source and Discord's terms don't allow redistributing it, so it's never
+# committed; builds without it leave the Discord settings explaining that.
+include:
+  - project.yml
+
+targets:
+  colon3:
+    sources:
+      - DiscordBridge
+    dependencies:
+      - framework: Vendor/discord_partner_sdk.xcframework
+        embed: true
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: DiscordBridge/colon3-Bridging-Header.h
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) COLON3_DISCORD"
+        CLANG_CXX_LANGUAGE_STANDARD: gnu++20
+        CLANG_CXX_LIBRARY: libc++

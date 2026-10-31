@@ -12,6 +12,7 @@ struct SettingsView: View {
     @EnvironmentObject private var drive: GoogleDrive
     @EnvironmentObject private var backup: BackupService
     @EnvironmentObject private var updates: UpdateChecker
+    @EnvironmentObject private var discord: DiscordPresence
 
     var body: some View {
         NavigationStack {
@@ -60,6 +61,11 @@ struct SettingsView: View {
                     NavigationLink { LastFMSettings() } label: {
                         SettingsRow("Last.fm", icon: "dot.radiowaves.left.and.right", color: .red,
                                     value: lastfm.isConnected ? (lastfm.username ?? "On") : "Off")
+                    }
+                    NavigationLink { DiscordSettings() } label: {
+                        SettingsRow("Discord", icon: "bubble.left.and.bubble.right.fill",
+                                    color: Color(red: 0.345, green: 0.396, blue: 0.949),
+                                    value: discord.isLinked && discord.enabled ? "On" : "Off")
                     }
                     NavigationLink { SpotifySettings() } label: {
                         SettingsRow("Spotify", icon: "music.note.list", color: .green,
@@ -341,6 +347,87 @@ struct LastFMSettings: View {
             LastFMSection(scrobbling: $scrobbling)
         }
         .navigationTitle("Last.fm")
+    }
+}
+
+struct DiscordSettings: View {
+    @EnvironmentObject private var discord: DiscordPresence
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            if !DiscordPresence.isAvailable {
+                Section {
+                    Label("Not in this build", systemImage: "puzzlepiece.extension")
+                } footer: {
+                    Text(DiscordPresence.sdkIncluded
+                         ? "This build has no Discord application ID. The README explains how to set one up."
+                         : "Discord's SDK is closed source, so only builds made with it (like the ones from the install page, once it's set up) can show your music on Discord.")
+                }
+            } else if !discord.isLinked {
+                Section {
+                    Button {
+                        link()
+                    } label: {
+                        if discord.isLinking { ProgressView() } else { Text("Connect Discord") }
+                    }
+                    .disabled(discord.isLinking)
+                    if let error {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                    }
+                } footer: {
+                    Text("Shows what you're listening to on your Discord profile: the song, artist, album cover and how far in you are, like Spotify does. Sign in once; no token or developer app needed.")
+                }
+            } else {
+                Section {
+                    Toggle("Show What I'm Listening To", isOn: $discord.enabled)
+                    if discord.enabled {
+                        status
+                    }
+                } footer: {
+                    Text("Shown while a song plays; pausing clears it. Album covers come from Apple's catalogue, since Discord can only show images from the web; songs it can't find show the colon3 icon.")
+                }
+                if discord.showsAsPlaying {
+                    Section {
+                        Button("Try \u{201C}Listening to\u{201D} Again") { discord.retryListening() }
+                    } footer: {
+                        Text("Discord didn't accept \u{201C}Listening to\u{201D} from colon3, so it shows \u{201C}Playing colon3\u{201D} instead.")
+                    }
+                }
+                Section {
+                    Button("Disconnect Discord", role: .destructive) { discord.unlink() }
+                }
+            }
+        }
+        .navigationTitle("Discord")
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch discord.connection {
+        case .off:
+            Label("Not connected", systemImage: "circle").foregroundStyle(.secondary)
+        case .connecting:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Connecting\u{2026}").foregroundStyle(.secondary)
+            }
+        case .connected:
+            Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        }
+    }
+
+    private func link() {
+        error = nil
+        Task {
+            do {
+                try await discord.link()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 
