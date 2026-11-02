@@ -391,7 +391,7 @@ struct DiscordSettings: View {
                     Section {
                         Button("Try \u{201C}Listening to\u{201D} Again") { discord.retryListening() }
                     } footer: {
-                        Text("Discord didn't accept \u{201C}Listening to\u{201D} from colon3, so it shows \u{201C}Playing colon3\u{201D} instead, with the song and artist under it.")
+                        Text("Discord didn't accept \u{201C}Listening to\u{201D} from colon3, so it shows \u{201C}Playing colon3\u{201D} until colon3 restarts. The reason is in Diagnostics & Logs.")
                     }
                 }
                 Section {

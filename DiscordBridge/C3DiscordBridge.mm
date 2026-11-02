@@ -104,8 +104,9 @@ static NSString *C3NSString(const std::string &text) {
     }
     activity.SetDetails(C3String(details));
     activity.SetState(C3String(state));
-    // The short status next to your name shows the song, not "colon3".
-    activity.SetStatusDisplayType(discordpp::StatusDisplayTypes::Details);
+    // The status under your name reads "Listening to <state>", the artist, instead of
+    // "Listening to colon3" (Discord's status display type, as Discord Music Presence does).
+    activity.SetStatusDisplayType(discordpp::StatusDisplayTypes::State);
 
     discordpp::ActivityAssets assets;
     if (imageURL.length > 0) {

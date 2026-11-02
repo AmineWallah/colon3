@@ -71,9 +71,11 @@ final class DiscordPresence: ObservableObject {
     private var lastSend = Date.distantPast
     private var lastTokenCheck = Date()
     private var sendScheduled = false
-    private var listeningRejected: Bool
-    /// Discord turned down the artist as the activity name ("Listening to <artist>").
-    private var artistNameRejected: Bool
+    /// "Listening" failed repeatedly this session, so "Playing" is used.
+    private var listeningRejected = false
+    private var listeningWorked = false
+    private var listeningFailures = 0
+    private var failuresInARow = 0
     private var coverURLs: [String: String] = [:]
     private var coverMisses: Set<String> = []
     private var coverLookups: Set<String> = []
@@ -86,10 +88,11 @@ final class DiscordPresence: ObservableObject {
         self.library = library
         let defaults = UserDefaults.standard
         enabled = defaults.bool(forKey: "discord.enabled")
-        listeningRejected = defaults.bool(forKey: "discord.listeningRejected")
-        artistNameRejected = defaults.bool(forKey: "discord.artistNameRejected")
+        // 1.3.0 remembered a rejection for good, so one failed update (often just a rate
+        // limit) left the status on "Playing" forever. Forget those.
+        defaults.removeObject(forKey: "discord.listeningRejected")
+        defaults.removeObject(forKey: "discord.artistNameRejected")
         isLinked = Keychain.load(account: "refreshToken", service: Self.keychainService) != nil
-        showsAsPlaying = listeningRejected
         coverURLs = defaults.dictionary(forKey: "discord.covers") as? [String: String] ?? [:]
 
         // Anything about the song or playing state changing: update (debounced).
@@ -400,42 +403,54 @@ final class DiscordPresence: ObservableObject {
            sent.coverURL == content.coverURL, abs(sent.startMs - content.startMs) < 2000 {
             return
         }
-        send(content, listening: !listeningRejected, artistAsName: !artistNameRejected, via: backend)
+        send(content, listening: !listeningRejected, via: backend)
     }
 
-    /// `artistAsName`: "Listening to <artist>" instead of "Listening to colon3". If Discord
-    /// refuses, it tries again without the artist name, then as "Playing".
-    private func send(_ content: Content, listening: Bool, artistAsName: Bool, via backend: DiscordBackend) {
+    /// A failed update isn't proof Discord won't take "Listening": it can be a rate limit or a
+    /// dropped connection. Only three failures in a row, before any "Listening" update worked
+    /// this session, switch to "Playing", and only until colon3 restarts.
+    private func send(_ content: Content, listening: Bool, via backend: DiscordBackend) {
         sent = content
         lastSend = Date()
-        backend.setPresence(content, listening: listening, artistAsName: artistAsName) { [weak self] error in
+        backend.setPresence(content, listening: listening) { [weak self] error in
             MainActor.assumeIsolated {
-                guard let self, let error else { return }
-                Diagnostics.shared.log("Discord: presence not accepted (\(listening ? "Listening" : "Playing")\(artistAsName ? ", artist as name" : "")): \(error)", category: "discord")
-                if artistAsName {
-                    self.artistNameRejected = true
-                    UserDefaults.standard.set(true, forKey: "discord.artistNameRejected")
-                    if let current = self.backend { self.send(content, listening: listening, artistAsName: false, via: current) }
-                } else if listening {
-                    // Discord may only take "Playing" from the SDK: fall back, and remember.
-                    self.listeningRejected = true
-                    self.showsAsPlaying = true
-                    UserDefaults.standard.set(true, forKey: "discord.listeningRejected")
-                    if let current = self.backend { self.send(content, listening: false, artistAsName: false, via: current) }
-                } else {
-                    self.sent = nil
+                guard let self else { return }
+                guard let error else {
+                    self.failuresInARow = 0
+                    if listening {
+                        self.listeningWorked = true
+                        self.listeningFailures = 0
+                    }
+                    return
+                }
+                Diagnostics.shared.log("Discord: presence not accepted (\(listening ? "Listening" : "Playing")): \(error)", category: "discord")
+                self.sent = nil  // Send it again on the next refresh.
+                if listening, !self.listeningWorked {
+                    self.listeningFailures += 1
+                    if self.listeningFailures >= 3 {
+                        self.listeningRejected = true
+                        self.showsAsPlaying = true
+                        Diagnostics.shared.log("Discord: \"Listening\" failed 3 times, showing \"Playing\" until colon3 restarts", category: "discord")
+                    }
+                }
+                // Try again after the usual spacing, a few times; then wait for the next song or
+                // play/pause to try again.
+                self.failuresInARow += 1
+                guard self.failuresInARow <= 5 else { return }
+                Task {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    self.refresh()
                 }
             }
         }
     }
 
-    /// Try "Listening" again (after Discord changes something).
+    /// Try "Listening" again.
     func retryListening() {
         listeningRejected = false
-        artistNameRejected = false
+        listeningFailures = 0
+        failuresInARow = 0
         showsAsPlaying = false
-        UserDefaults.standard.removeObject(forKey: "discord.listeningRejected")
-        UserDefaults.standard.removeObject(forKey: "discord.artistNameRejected")
         sent = nil
         refresh()
     }
@@ -543,8 +558,7 @@ protocol DiscordBackend: AnyObject {
     func updateToken(_ token: String)
     func disconnect()
     func runCallbacks()
-    func setPresence(_ content: DiscordPresence.Content, listening: Bool, artistAsName: Bool,
-                     completion: @escaping (String?) -> Void)
+    func setPresence(_ content: DiscordPresence.Content, listening: Bool, completion: @escaping (String?) -> Void)
     func clearPresence()
 }
 
@@ -580,13 +594,13 @@ final class SocialSDKBackend: DiscordBackend {
     func disconnect() { bridge.disconnect() }
     func runCallbacks() { bridge.runCallbacks() }
 
-    /// With the artist as the name, the lines under it are the song and the album (the artist
-    /// is already in the heading); otherwise the song and the artist.
-    func setPresence(_ content: DiscordPresence.Content, listening: Bool, artistAsName: Bool,
-                     completion: @escaping (String?) -> Void) {
-        bridge.setPresence(name: artistAsName ? content.artist : nil,
+    /// Like Discord Music Presence's "Listening to Artist": the activity keeps colon3's name,
+    /// the lines are the song and the artist, and the status under your name shows the artist
+    /// (status display type State).
+    func setPresence(_ content: DiscordPresence.Content, listening: Bool, completion: @escaping (String?) -> Void) {
+        bridge.setPresence(name: nil,
                            details: content.title,
-                           state: artistAsName ? (content.album ?? content.artist) : content.artist,
+                           state: content.artist,
                            largeText: content.album,
                            imageURL: content.coverURL,
                            startMilliseconds: content.startMs,
