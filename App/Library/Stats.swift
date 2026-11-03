@@ -126,6 +126,9 @@ final class StatsStore: ObservableObject {
 
     func plays(of track: Track) -> Int { stored.tracks[track.id]?.plays ?? 0 }
 
+    /// When a song (by id) was last played, if ever.
+    func lastPlayed(_ trackID: String) -> Date? { stored.tracks[trackID]?.lastPlayed }
+
     func mostPlayed(limit: Int, in library: LibraryStore) -> [Track] {
         let ranked = stored.tracks
             .filter { $0.value.plays > 0 }

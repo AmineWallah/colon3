@@ -8,7 +8,8 @@ import UIKit
 /// 0. a cover the user picked in the app (kept in Application Support, files untouched)
 /// 1. an image file next to the music (cover.jpg, folder.jpg, …)
 /// 2. art embedded in the audio file (extracted once into the cache folder)
-/// 3. an iTunes Search lookup, if enabled in Settings
+/// 3. an iTunes Search lookup, if enabled in Settings, then Deezer and MusicBrainz's Cover Art
+///    Archive when Apple has nothing that matches
 actor ArtworkStore {
     static let shared = ArtworkStore()
 
@@ -128,12 +129,14 @@ actor ArtworkStore {
             for track in album.tracks where track.hasEmbeddedArt {
                 if let embedded = await embedded(track, cacheKey: source.key) { return embedded }
             }
-            return await online(query: "\(album.artist) \(album.title)", entity: "album", cacheKey: source.key)
+            return await online(query: "\(album.artist) \(album.title)", entity: "album", cacheKey: source.key,
+                                artist: album.artist, title: album.title)
 
         case let .track(track):
             if !isLibraryRoot(track.folder), let local = folderImage(in: track.folder) { return local }
             if track.hasEmbeddedArt, let embedded = await embedded(track, cacheKey: source.key) { return embedded }
-            return await online(query: "\(track.artist) \(track.title)", entity: "song", cacheKey: source.key)
+            return await online(query: "\(track.artist) \(track.title)", entity: "song", cacheKey: source.key,
+                                artist: track.artist, title: track.title)
 
         case let .remote(query):
             return await online(query: query, entity: "album", cacheKey: source.key)
@@ -189,7 +192,8 @@ actor ArtworkStore {
         return file
     }
 
-    private func online(query: String, entity: String, cacheKey: String) async -> URL? {
+    private func online(query: String, entity: String, cacheKey: String,
+                        artist: String? = nil, title: String? = nil) async -> URL? {
         let hash = MD5.hex(cacheKey)
         let file = directory.appendingPathComponent("web-\(hash).img")
         let miss = directory.appendingPathComponent("web-\(hash).none")
@@ -202,15 +206,19 @@ actor ArtworkStore {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 3, trimmed.lowercased() != "unknown artist unknown album" else { return nil }
 
-        switch await CoverLookup.shared.artwork(query: trimmed, entity: entity) {
-        case let .found(data):
+        let outcome = await CoverLookup.shared.artwork(query: trimmed, entity: entity)
+        if case let .found(data) = outcome {
             return (try? data.write(to: file, options: .atomic)) != nil ? file : nil
-        case .notFound:
-            FileManager.default.createFile(atPath: miss.path, contents: nil)
-            return nil
-        case .failed:
-            return nil  // Network trouble: try again next time
         }
+        // Apple has nothing (or didn't answer): a confident match from Deezer or MusicBrainz.
+        if let artist, let title,
+           let data = await CoverSearch.fallbackCover(artist: artist, title: title, kind: entity == "album" ? .album : .song) {
+            return (try? data.write(to: file, options: .atomic)) != nil ? file : nil
+        }
+        if case .notFound = outcome {
+            FileManager.default.createFile(atPath: miss.path, contents: nil)
+        }
+        return nil  // After network trouble: try again next time
     }
 
     nonisolated static func downsample(_ url: URL, maxPixel: Int) -> UIImage? {

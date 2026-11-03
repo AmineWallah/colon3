@@ -199,9 +199,14 @@ struct TrackMenuItems: View {
         } else if tracks.count == 1, let track = tracks.first {
             ArtworkMenu(target: .track(track))
             Button {
+                router.findLyrics(for: track)
+            } label: {
+                Label("Find Lyrics…", systemImage: "quote.bubble")
+            }
+            Button {
                 router.importLyrics(for: track)
             } label: {
-                Label("Import Lyrics (.lrc)…", systemImage: "quote.bubble")
+                Label("Import Lyrics (.lrc)…", systemImage: "doc.text")
             }
         }
         if let album {
@@ -244,6 +249,11 @@ struct ArtworkMenu: View {
 
     var body: some View {
         Menu {
+            Button {
+                router.findCover(for: target)
+            } label: {
+                Label("Find Cover Online…", systemImage: "magnifyingglass")
+            }
             Button {
                 router.pickArtworkPhoto(for: target)
             } label: {

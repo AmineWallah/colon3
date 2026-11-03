@@ -116,6 +116,11 @@ final class LibraryStore: ObservableObject {
         return (try? data.write(to: Self.lyricsURL(for: track), options: .atomic)) != nil
     }
 
+    /// Saves lyrics picked in the app as the song's .lrc.
+    func saveLyrics(_ text: String, for track: Track) -> Bool {
+        (try? Data(text.utf8).write(to: Self.lyricsURL(for: track), options: .atomic)) != nil
+    }
+
     func removeLyricsFile(for track: Track) {
         try? FileManager.default.removeItem(at: Self.lyricsURL(for: track))
     }

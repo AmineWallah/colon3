@@ -158,6 +158,12 @@ struct NowPlayingView: View {
             }
             Button {
                 mode = .lyrics
+                router.findLyrics(for: track)
+            } label: {
+                Label("Find Lyrics…", systemImage: "magnifyingglass")
+            }
+            Button {
+                mode = .lyrics
                 router.importLyrics(for: track)
             } label: {
                 Label("Import Lyrics (.lrc)…", systemImage: "doc.text")

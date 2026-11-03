@@ -316,9 +316,11 @@ jobs:
           # Use the CHANGELOG section when there is one, otherwise GitHub's generated notes.
           scripts/changelog-section.sh "${{ needs.build.outputs.version }}" > notes.md
           if [ -s notes.md ]; then args+=(--notes-file notes.md); else args+=(--generate-notes); fi
+          # v1.4.0-beta.1 → "colon3 1.4.0 beta 1".
+          title="colon3 $(echo "${GITHUB_REF_NAME#v}" | sed -E 's/-(alpha|beta|rc)\.?([0-9]+)$/ \1 \2/')"
           gh release create "$GITHUB_REF_NAME" "$file" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "colon3 ${GITHUB_REF_NAME#v}" \
+            --title "$title" \
             "${args[@]}"
 
       - name: Update the AltStore source

@@ -218,6 +218,16 @@ struct LibrarySettings: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    StorageView()
+                } label: {
+                    Label("Storage", systemImage: "internaldrive")
+                }
+            } footer: {
+                Text("What takes up space, and songs you haven't played in 30 days.")
+            }
+
+            Section {
                 LabeledContent("Songs", value: "\(library.tracks.count)")
                 LabeledContent("Albums", value: "\(library.albums.count)")
                 Button("Rescan Library") { library.rescan() }

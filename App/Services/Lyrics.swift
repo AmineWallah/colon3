@@ -80,6 +80,46 @@ actor LyricsService {
         return Self.lyrics(from: entry)
     }
 
+    /// One LRCLIB result, for picking lyrics by hand.
+    struct SearchResult: Identifiable, Hashable, Decodable {
+        let id: Int
+        let trackName: String?
+        let artistName: String?
+        let albumName: String?
+        let duration: Double?
+        let instrumental: Bool?
+        let plainLyrics: String?
+        let syncedLyrics: String?
+
+        var isSynced: Bool { syncedLyrics?.isEmpty == false }
+        var hasLyrics: Bool { isSynced || plainLyrics?.isEmpty == false }
+
+        /// What gets saved as the song's .lrc: the synced lyrics if there are any.
+        var fileText: String? {
+            if let synced = syncedLyrics, !synced.isEmpty { return synced }
+            if let plain = plainLyrics, !plain.isEmpty { return plain }
+            return nil
+        }
+
+        var preview: Lyrics {
+            if let synced = syncedLyrics, !synced.isEmpty {
+                let lines = LyricsService.parseLRC(synced)
+                if !lines.isEmpty { return .synced(lines) }
+            }
+            if let plain = plainLyrics, !plain.isEmpty { return .plain(plain.components(separatedBy: .newlines)) }
+            return instrumental == true ? .instrumental : .notFound
+        }
+    }
+
+    /// Free-text search on LRCLIB ("artist title", or anything else).
+    func search(_ query: String) async throws -> [SearchResult] {
+        var components = URLComponents(string: "https://lrclib.net/api/search")!
+        components.queryItems = [URLQueryItem(name: "q", value: query)]
+        let (data, status) = try await get(components.url!)
+        guard status == 200 else { throw URLError(.badServerResponse) }
+        return (try? JSONDecoder().decode([SearchResult].self, from: data)) ?? []
+    }
+
     func forget(cacheKey: String) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(MD5.hex(cacheKey) + ".json"))
     }
