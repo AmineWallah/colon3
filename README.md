@@ -9,6 +9,7 @@
   <a href="https://github.com/AmineWallah/colon3/releases/latest"><img src="https://img.shields.io/github/v/release/AmineWallah/colon3?label=Latest%20release&color=brightgreen" alt="Latest release"></a>
   <a href="https://github.com/AmineWallah/colon3/releases"><img src="https://img.shields.io/github/downloads/AmineWallah/colon3/total?label=Download&color=brightgreen" alt="Downloads"></a>
   <a href="https://aminewallah.github.io/colon3/source.html"><img src="https://img.shields.io/badge/AltStore%20%2F%20SideStore-Add%20source-8e44ad" alt="Add the AltStore / SideStore source"></a>
+  <a href="https://liberapay.com/AmineWallah/donate"><img src="https://img.shields.io/liberapay/receives/AmineWallah?logo=liberapay&label=Liberapay&color=f6c915" alt="Support on Liberapay"></a>
 </p>
 
 A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
@@ -30,6 +31,8 @@ A native Soulseek client and music player for iOS. Search the Soulseek network, 
 - **Siri and Shortcuts:** "Play music in colon3", "Play a song in colon3", "Play <playlist> in colon3", "Shuffle colon3", pause, skip and more, with no setup.
 
 Meant for sideloading. It won't pass App Store review.
+
+If colon3 is useful to you, you can support it on [Liberapay](https://liberapay.com/AmineWallah/donate).
 
 ## Screenshots
 
