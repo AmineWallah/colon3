@@ -12,6 +12,9 @@ struct LyricsView: View {
     @State private var lyrics: Lyrics?
     @State private var isLoading = true
     @State private var userScrolledAt: Date?
+    /// Romaji / pinyin / Korean romanization under each line, by line id (or index for plain).
+    @State private var romanized: [Int: String] = [:]
+    @AppStorage("lyrics.romanize") private var romanize = true
 
     var body: some View {
         Group {
@@ -46,6 +49,7 @@ struct LyricsView: View {
             }
         }
         .task(id: "\(track.id)#\(router.lyricsRevision)") { await load() }
+        .onChange(of: romanize) { _, _ in Task { await romanizeLyrics() } }
     }
 
     private func load() async {
@@ -58,6 +62,30 @@ struct LyricsView: View {
                                                        duration: track.duration, cacheKey: track.id)
         }
         isLoading = false
+        await romanizeLyrics()
+    }
+
+    /// Works out the romanization off the main thread, once per lyrics.
+    private func romanizeLyrics() async {
+        guard romanize else {
+            romanized = [:]
+            return
+        }
+        let lines: [(Int, String)]
+        switch lyrics {
+        case let .synced(synced): lines = synced.map { ($0.id, $0.text) }
+        case let .plain(plain): lines = Array(plain.enumerated()).map { ($0.offset, $0.element) }
+        default: lines = []
+        }
+        let result = await Task.detached(priority: .userInitiated) { () -> [Int: String] in
+            guard let script = Romanizer.script(for: lines.map(\.1)) else { return [:] }
+            var output: [Int: String] = [:]
+            for (id, text) in lines {
+                if let romanized = Romanizer.romanize(text, as: script) { output[id] = romanized }
+            }
+            return output
+        }.value
+        romanized = result
     }
 
     private func activeLine(in lines: [LyricLine]) -> Int {
@@ -77,15 +105,22 @@ struct LyricsView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     ForEach(lines) { line in
                         let distance = active < 0 ? 1 : abs(line.id - active)
-                        Text(line.text)
-                            .font(.system(size: 32, weight: .bold))
-                            .foregroundStyle(.white.opacity(line.id == active ? 1 : 0.32))
-                            .blur(radius: line.id == active ? 0 : min(Double(distance) * 0.6, 2.4))
-                            .scaleEffect(line.id == active ? 1 : 0.97, anchor: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .id(line.id)
-                            .onTapGesture { onSeek(line.time) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(line.text)
+                                .font(.system(size: 32, weight: .bold))
+                            if let reading = romanized[line.id] {
+                                Text(reading)
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .opacity(0.7)
+                            }
+                        }
+                        .foregroundStyle(.white.opacity(line.id == active ? 1 : 0.32))
+                        .blur(radius: line.id == active ? 0 : min(Double(distance) * 0.6, 2.4))
+                        .scaleEffect(line.id == active ? 1 : 0.97, anchor: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .id(line.id)
+                        .onTapGesture { onSeek(line.time) }
                     }
                 }
                 .padding(.horizontal, 28)
@@ -108,11 +143,18 @@ struct LyricsView: View {
     private func plain(_ lines: [String]) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    Text(line.isEmpty ? " " : line)
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(line.isEmpty ? " " : line)
+                            .font(.system(size: 26, weight: .bold))
+                        if let reading = romanized[index] {
+                            Text(reading)
+                                .font(.system(size: 17, weight: .semibold))
+                                .opacity(0.7)
+                        }
+                    }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(.horizontal, 28)

@@ -16,6 +16,7 @@ struct NowPlayingView: View {
     @State private var mode: Mode = .artwork
     @State private var showEqualizer = false
     @State private var showSpeed = false
+    @AppStorage("lyrics.romanize") private var romanizeLyrics = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,6 +148,9 @@ struct NowPlayingView: View {
                 Label("Add to Playlist…", systemImage: "text.badge.plus")
             }
             Divider()
+            Toggle(isOn: $romanizeLyrics) {
+                Label("Romanize Lyrics", systemImage: "character.phonetic")
+            }
             Button {
                 mode = .lyrics
                 Task {
