@@ -259,7 +259,6 @@ struct LibrarySettings: View {
 
 struct PlaybackSettings: View {
     @EnvironmentObject private var player: Player
-    @AppStorage(LyricsActivityController.enabledKey) private var lockScreenLyrics = true
     @AppStorage("lyrics.romanize") private var romanizeLyrics = true
 
     var body: some View {
@@ -277,12 +276,11 @@ struct PlaybackSettings: View {
             }
 
             Section {
-                Toggle("Lyrics on Lock Screen", isOn: $lockScreenLyrics)
                 Toggle("Romanize Lyrics", isOn: $romanizeLyrics)
             } header: {
                 Text("Lyrics")
             } footer: {
-                Text("Lyrics on Lock Screen shows the line being sung as a Live Activity while songs with synced lyrics play. It starts when you play something with colon3 open. Romanize Lyrics adds romaji, pinyin or Korean romanization under Japanese, Chinese and Korean lines.")
+                Text("Romanize Lyrics adds romaji, pinyin or Korean romanization under Japanese, Chinese and Korean lines.")
             }
 
             Section {

@@ -1,3 +1,4 @@
+import ActivityKit
 import SwiftUI
 
 @main
@@ -23,7 +24,6 @@ struct Colon3App: App {
     @StateObject private var discord: DiscordPresence
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
-    private let lyricsActivity: LyricsActivityController
 
     init() {
         Diagnostics.shared.start()
@@ -57,7 +57,10 @@ struct Colon3App: App {
                                    stats: stats, fetcher: fetcher)
         _completeness = StateObject(wrappedValue: completeness)
         transferMonitor = TransferMonitor(soulseek: soulseek, player: player, stats: stats, backup: backup)
-        lyricsActivity = LyricsActivityController(player: player, library: library)
+        // 1.4.0 beta 3 showed lyrics on the Lock Screen as a Live Activity; end any left over.
+        for leftover in Activity<LyricsActivityAttributes>.activities {
+            Task { await leftover.end(nil, dismissalPolicy: .immediate) }
+        }
         _favorites = StateObject(wrappedValue: favorites)
         AppServices.configure(player: player, library: library, playlists: playlists, favorites: favorites)
         _drive = StateObject(wrappedValue: drive)

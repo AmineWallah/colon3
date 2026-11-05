@@ -130,10 +130,7 @@ final class AppRouter: ObservableObject {
         playlistRequest = PlaylistRequest(tracks: tracks)
     }
 
-    func lyricsChanged() {
-        lyricsRevision += 1
-        NotificationCenter.default.post(name: .colon3LyricsChanged, object: nil)
-    }
+    func lyricsChanged() { lyricsRevision += 1 }
 
     func importPlaylist(from source: ImportSource) { playlistImport = .pick(source) }
     func showImportProgress() { playlistImport = .progress }

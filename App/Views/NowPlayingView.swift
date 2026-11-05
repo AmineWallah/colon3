@@ -17,7 +17,6 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showSpeed = false
     @AppStorage("lyrics.romanize") private var romanizeLyrics = true
-    @AppStorage(LyricsActivityController.enabledKey) private var lockScreenLyrics = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -220,9 +219,6 @@ struct NowPlayingView: View {
             Divider()
             Toggle(isOn: $romanizeLyrics) {
                 Label("Romanize Lyrics", systemImage: "character.phonetic")
-            }
-            Toggle(isOn: $lockScreenLyrics) {
-                Label("Lyrics on Lock Screen", systemImage: "lock.rectangle")
             }
             Button {
                 mode = .lyrics
