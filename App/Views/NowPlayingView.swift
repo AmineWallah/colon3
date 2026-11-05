@@ -17,8 +17,36 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showSpeed = false
     @AppStorage("lyrics.romanize") private var romanizeLyrics = true
+    @AppStorage(LyricsActivityController.enabledKey) private var lockScreenLyrics = true
 
     var body: some View {
+        GeometryReader { geometry in
+            let landscape = geometry.size.width > geometry.size.height
+            Group {
+                if landscape {
+                    landscapeLayout
+                } else {
+                    portraitLayout
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .foregroundStyle(.white)
+        .background { PlayerBackground(image: player.artwork) }
+        .environment(\.colorScheme, .dark)
+        .presentationDragIndicator(.hidden)
+        .presentationBackground(.black)
+        .sheet(isPresented: $showEqualizer) {
+            NavigationStack { EqualizerView(equalizer: player.equalizer) }
+                .presentationDetents([.medium, .large])
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: mode)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpeed)
+        .onAppear { OrientationLock.allowLandscape(true) }
+        .onDisappear { OrientationLock.allowLandscape(false) }
+    }
+
+    private var portraitLayout: some View {
         VStack(spacing: 0) {
             Capsule()
                 .fill(.white.opacity(0.35))
@@ -62,17 +90,52 @@ struct NowPlayingView: View {
             }
         }
         .padding(.horizontal, 28)
-        .foregroundStyle(.white)
-        .background { PlayerBackground(image: player.artwork) }
-        .environment(\.colorScheme, .dark)
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(.black)
-        .sheet(isPresented: $showEqualizer) {
-            NavigationStack { EqualizerView(equalizer: player.equalizer) }
-                .presentationDetents([.medium, .large])
+    }
+
+    /// Landscape: artwork, lyrics or the queue on the left, everything else on the right.
+    @ViewBuilder
+    private var landscapeLayout: some View {
+        if let track = player.current {
+            HStack(spacing: 36) {
+                Group {
+                    switch mode {
+                    case .artwork:
+                        largeArtwork
+                    case .lyrics:
+                        ClockedLyrics(track: track, albumTitle: library.album(containing: track)?.title ?? track.album)
+                    case .queue:
+                        QueueView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    titleRow(track, compact: false)
+                    ScrubBar()
+                        .padding(.top, 14)
+                    transport
+                        .padding(.vertical, 10)
+                    if showSpeed {
+                        SpeedControl()
+                            .padding(.bottom, 8)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    VolumeRow()
+                    bottomBar
+                        .padding(.top, 12)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+        } else {
+            Text("Not Playing")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: mode)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpeed)
     }
 
     private var largeArtwork: some View {
@@ -147,9 +210,19 @@ struct NowPlayingView: View {
             } label: {
                 Label("Add to Playlist…", systemImage: "text.badge.plus")
             }
+            if let album = library.album(containing: track) {
+                Button {
+                    router.showAlbum(album)
+                } label: {
+                    Label("Go to Album", systemImage: "square.stack")
+                }
+            }
             Divider()
             Toggle(isOn: $romanizeLyrics) {
                 Label("Romanize Lyrics", systemImage: "character.phonetic")
+            }
+            Toggle(isOn: $lockScreenLyrics) {
+                Label("Lyrics on Lock Screen", systemImage: "lock.rectangle")
             }
             Button {
                 mode = .lyrics

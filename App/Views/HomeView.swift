@@ -36,15 +36,18 @@ struct HomeView: View {
                             .foregroundStyle(.orange)
                             .padding(.horizontal, 20)
                     }
-                    if trending.entries.isEmpty {
-                        chartStatus
-                    } else if let note = trending.staleNote {
-                        Label(note, systemImage: "exclamationmark.icloud")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 20)
-                    }
+                    let firstChart = sections.first(where: \.isChart)
                     ForEach(sections) { section in
+                        if section == firstChart {
+                            if trending.entries.isEmpty {
+                                chartStatus
+                            } else if let note = trending.staleNote {
+                                Label(note, systemImage: "exclamationmark.icloud")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 20)
+                            }
+                        }
                         shelf(section)
                     }
                 }
@@ -90,6 +93,8 @@ struct HomeView: View {
     @ViewBuilder
     private func shelf(_ section: HomeSection) -> some View {
         switch section {
+        case .continueListening:
+            ContinueListeningCard()
         case .trending:
             if !trending.trendingSongs.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
@@ -771,5 +776,79 @@ struct HomeSectionsSettings: View {
         .environment(\.editMode, .constant(.active))
         .navigationTitle("Home Sections")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Continue Listening
+
+/// The top of Home: the song you were on, to carry on from where it stopped (the paused song,
+/// or the queue saved when the app was last closed). Hidden while something is playing.
+struct ContinueListeningCard: View {
+    @EnvironmentObject private var player: Player
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var clock: PlaybackClock
+
+    var body: some View {
+        if !player.isPlaying, let item = resumable {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Continue Listening")
+                    .font(.title2.weight(.bold))
+                    .padding(.horizontal, 20)
+                Button {
+                    if player.current != nil {
+                        player.resume()
+                    } else {
+                        player.resumeSavedSession(in: library)
+                    }
+                } label: {
+                    card(item)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    private var resumable: (track: Track, position: Double)? {
+        if let current = player.current { return (current, clock.position) }
+        guard let track = player.savedSessionTrack(in: library) else { return nil }
+        return (track, player.savedSession?.position ?? 0)
+    }
+
+    private func card(_ item: (track: Track, position: Double)) -> some View {
+        let duration = max(item.track.duration, 1)
+        let fraction = min(max(item.position / duration, 0), 1)
+        let left = max(duration - item.position, 0)
+        return HStack(spacing: 14) {
+            ArtworkView(source: library.artwork(for: item.track), size: 64)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.track.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(item.track.artist)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    ProgressView(value: fraction)
+                        .frame(maxWidth: 120)
+                    Text(Self.remaining(left))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: 38))
+                .foregroundStyle(.tint)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private static func remaining(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d left", total / 60, total % 60)
     }
 }

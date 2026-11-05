@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct Colon3App: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library: LibraryStore
     @StateObject private var soulseek: SoulseekModel
     @StateObject private var player: Player
@@ -22,6 +23,7 @@ struct Colon3App: App {
     @StateObject private var discord: DiscordPresence
     @Environment(\.scenePhase) private var scenePhase
     private let transferMonitor: TransferMonitor
+    private let lyricsActivity: LyricsActivityController
 
     init() {
         Diagnostics.shared.start()
@@ -55,6 +57,7 @@ struct Colon3App: App {
                                    stats: stats, fetcher: fetcher)
         _completeness = StateObject(wrappedValue: completeness)
         transferMonitor = TransferMonitor(soulseek: soulseek, player: player, stats: stats, backup: backup)
+        lyricsActivity = LyricsActivityController(player: player, library: library)
         _favorites = StateObject(wrappedValue: favorites)
         AppServices.configure(player: player, library: library, playlists: playlists, favorites: favorites)
         _drive = StateObject(wrappedValue: drive)
@@ -123,6 +126,7 @@ struct Colon3App: App {
                 backup.backUpIfDue()
             case .background:
                 stats.save()
+                player.saveSession()
             default:
                 break
             }

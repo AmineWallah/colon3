@@ -6,6 +6,7 @@ import WidgetKit
 struct TransfersWidgetBundle: WidgetBundle {
     var body: some Widget {
         TransfersLiveActivity()
+        LyricsLiveActivity()
     }
 }
 

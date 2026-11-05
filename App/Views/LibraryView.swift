@@ -39,6 +39,7 @@ struct LibraryView: View {
                 .searchable(text: $query, prompt: "Search your library")
                 .toolbar { toolbar }
                 .navigationDestination(for: Album.self) { AlbumDetailView(album: $0) }
+                .navigationDestination(item: $router.pendingAlbum) { AlbumDetailView(album: $0) }
                 .navigationDestination(for: ArtistEntry.self) { ArtistDetailView(artist: $0) }
                 .navigationDestination(for: PlaylistRoute.self) { PlaylistDetailView(route: $0) }
                 .safeAreaInset(edge: .bottom) {

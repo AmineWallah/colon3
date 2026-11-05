@@ -13,6 +13,11 @@ CI uses the section matching the build's version as the GitHub Release notes and
 
 - **Romanized lyrics:** Japanese lyrics get romaji, Chinese pinyin with tone marks, and Korean its romanization, in smaller type under each line, worked out on the phone. Kanji in Japanese songs get their Japanese readings. Turn it off with Romanize Lyrics in the Now Playing menu.
 
+- **Landscape player:** turn the phone sideways in Now Playing for a landscape layout: the artwork, lyrics or queue on the left, and the song, controls, volume and buttons on the right. The rest of the app stays in portrait.
+- **Lyrics on the Lock Screen:** while a song with synced lyrics plays, the line being sung (with its romanization and the next line) shows on the Lock Screen as a Live Activity, and in the Dynamic Island when it's expanded. It starts when you play something with colon3 open and follows every song after that. Turn it off in the Now Playing menu or Settings › Playback.
+- **Continue Listening:** the top of Home shows the song you stopped on, where you stopped, even after closing the app. Tap it to carry on with the same queue. Move or hide it in Settings › Appearance › Home Sections.
+- **Go to Album:** in the Now Playing menu, opens the album of the song that's playing.
+
 ### Changed
 - **Missing covers:** when Apple has no cover for an album or song, colon3 now also looks on Deezer and MusicBrainz's Cover Art Archive, and uses what it finds there if the title and artist match.
 

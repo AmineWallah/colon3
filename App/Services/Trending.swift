@@ -40,12 +40,13 @@ struct ReleaseTrack: Identifiable, Hashable {
 
 /// The shelves on the Home tab, in the order Settings › Home Sections keeps.
 enum HomeSection: String, CaseIterable, Identifiable {
-    case trending, top100, releases, recent
+    case continueListening, trending, top100, releases, recent
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .continueListening: return "Continue Listening"
         case .trending: return "Trending Songs"
         case .top100: return "Top 100"
         case .releases: return "Recent Releases"
@@ -56,12 +57,17 @@ enum HomeSection: String, CaseIterable, Identifiable {
     static let orderKey = "home.sections"
     static let hiddenKey = "home.hidden"
 
-    /// Every section in the saved order (new ones at the end), as stored in `orderKey`.
+    /// Every section in the saved order, as stored in `orderKey`. New ones go at the end,
+    /// except Continue Listening, which starts at the top.
     static func ordered(_ stored: String) -> [HomeSection] {
         var result = stored.split(separator: ",").compactMap { HomeSection(rawValue: String($0)) }
+        if !stored.isEmpty, !result.contains(.continueListening) { result.insert(.continueListening, at: 0) }
         for section in allCases where !result.contains(section) { result.append(section) }
         return result
     }
+
+    /// Shelves that come from Apple's charts (their loading state shows above the first one).
+    var isChart: Bool { self == .trending || self == .top100 || self == .releases }
 
     static func hidden(_ stored: String) -> Set<HomeSection> {
         Set(stored.split(separator: ",").compactMap { HomeSection(rawValue: String($0)) })

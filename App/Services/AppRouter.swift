@@ -102,6 +102,8 @@ final class AppRouter: ObservableObject {
     @Published var backupRestore: BackupRestoreRequest?
     @Published var lyricsSearch: LyricsSearchRequest?
     @Published var coverSearch: CoverSearchRequest?
+    /// An album to open in the Library tab ("Go to Album" in the player).
+    @Published var pendingAlbum: Album?
 
     init() {
         tab = UserDefaults.standard.string(forKey: "selectedTab").flatMap(AppTab.init(rawValue:)) ?? .library
@@ -114,6 +116,11 @@ final class AppRouter: ObservableObject {
     func importBackupFile() { presentImporter(.backup) }
     func findLyrics(for track: Track) { lyricsSearch = LyricsSearchRequest(track: track) }
     func findCover(for target: ArtworkTarget) { coverSearch = CoverSearchRequest(target: target) }
+    func showAlbum(_ album: Album) {
+        showPlayer = false
+        tab = .library
+        pendingAlbum = album
+    }
     func pickArtworkPhoto(for target: ArtworkTarget) {
         photoTarget = target
         showPhotoPicker = true
@@ -123,7 +130,10 @@ final class AppRouter: ObservableObject {
         playlistRequest = PlaylistRequest(tracks: tracks)
     }
 
-    func lyricsChanged() { lyricsRevision += 1 }
+    func lyricsChanged() {
+        lyricsRevision += 1
+        NotificationCenter.default.post(name: .colon3LyricsChanged, object: nil)
+    }
 
     func importPlaylist(from source: ImportSource) { playlistImport = .pick(source) }
     func showImportProgress() { playlistImport = .progress }

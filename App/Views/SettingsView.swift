@@ -259,6 +259,8 @@ struct LibrarySettings: View {
 
 struct PlaybackSettings: View {
     @EnvironmentObject private var player: Player
+    @AppStorage(LyricsActivityController.enabledKey) private var lockScreenLyrics = true
+    @AppStorage("lyrics.romanize") private var romanizeLyrics = true
 
     var body: some View {
         Form {
@@ -272,6 +274,15 @@ struct PlaybackSettings: View {
                 Text("Autoplay")
             } footer: {
                 Text("Autoplay keeps the music going when the queue ends. With a Last.fm API key (Settings › Last.fm) it picks songs similar to what you played: ones in your library play straight away; ones you don't have show under Up Next with a Download button, and play once downloaded (into the \u{201C}Found by Autoplay\u{201D} playlist). Turn on Download Suggestions Automatically to skip the button, or Only from Library to never suggest downloads. Recently played songs are skipped.")
+            }
+
+            Section {
+                Toggle("Lyrics on Lock Screen", isOn: $lockScreenLyrics)
+                Toggle("Romanize Lyrics", isOn: $romanizeLyrics)
+            } header: {
+                Text("Lyrics")
+            } footer: {
+                Text("Lyrics on Lock Screen shows the line being sung as a Live Activity while songs with synced lyrics play. It starts when you play something with colon3 open. Romanize Lyrics adds romaji, pinyin or Korean romanization under Japanese, Chinese and Korean lines.")
             }
 
             Section {

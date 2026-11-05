@@ -123,6 +123,7 @@ final class Player: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     /// Set when another app interrupts us mid-song, so only those songs resume afterwards.
     private var resumeAfterInterruption = false
+    private var lastSessionSave = Date.distantPast
 
     private let recommender = AutoplayRecommender()
     /// The song autoplay's current list follows on from (the end of the queue when it was made).
@@ -551,6 +552,56 @@ final class Player: ObservableObject {
         clock.position = backend?.currentTime ?? position
         updateNowPlaying()
         if wasPlaying { releaseAudioSession() }
+        saveSession()
+    }
+
+    // MARK: Session
+
+    /// What was playing, so Home can offer to carry on after the app was closed.
+    struct Session: Codable {
+        var trackIDs: [String]
+        var index: Int
+        var position: Double
+        var saved: Date
+    }
+
+    private static let sessionKey = "player.session"
+
+    /// Saves the queue (up to 500 songs around the current one), the song and the position.
+    func saveSession() {
+        guard !queue.isEmpty, queue.indices.contains(index) else { return }
+        lastSessionSave = Date()
+        let start = max(0, index - 50)
+        let end = min(queue.count, start + 500)
+        let session = Session(trackIDs: queue[start..<end].map(\.id), index: index - start,
+                              position: clock.position, saved: Date())
+        if let data = try? JSONEncoder().encode(session) {
+            UserDefaults.standard.set(data, forKey: Self.sessionKey)
+        }
+    }
+
+    var savedSession: Session? {
+        guard let data = UserDefaults.standard.data(forKey: Self.sessionKey) else { return nil }
+        return try? JSONDecoder().decode(Session.self, from: data)
+    }
+
+    /// The saved session's song, if it's still in the library.
+    func savedSessionTrack(in library: LibraryStore) -> Track? {
+        guard let session = savedSession, session.trackIDs.indices.contains(session.index) else { return nil }
+        return library.track(id: session.trackIDs[session.index])
+    }
+
+    /// Plays the saved queue from where it stopped.
+    @discardableResult
+    func resumeSavedSession(in library: LibraryStore) -> Bool {
+        guard let session = savedSession else { return false }
+        let tracks = session.trackIDs.compactMap { library.track(id: $0) }
+        guard !tracks.isEmpty else { return false }
+        let currentID = session.trackIDs.indices.contains(session.index) ? session.trackIDs[session.index] : nil
+        let start = currentID.flatMap { id in tracks.firstIndex { $0.id == id } } ?? 0
+        play(tracks, startAt: start)
+        if tracks[start].id == currentID, session.position > 5 { seek(to: session.position) }
+        return true
     }
 
     /// Hands the audio back once colon3 stops playing: other apps (a voice message, a video)
@@ -664,6 +715,7 @@ final class Player: ObservableObject {
 
         reloadArtwork()
         refreshAutoplay()
+        saveSession()
     }
 
     /// Reloads the current cover (after a new one was downloaded or picked).
@@ -733,6 +785,7 @@ final class Player: ObservableObject {
                 }
             }
             if duration <= 0, backend.duration > 0 { duration = backend.duration }
+            if Date().timeIntervalSince(lastSessionSave) > 10 { saveSession() }
         } else if timer != nil {
             timer?.invalidate()
             timer = nil
