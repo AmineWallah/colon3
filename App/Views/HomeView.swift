@@ -795,17 +795,24 @@ struct ContinueListeningCard: View {
                     .font(.title2.weight(.bold))
                     .padding(.horizontal, 20)
                 Button {
-                    if player.current != nil {
-                        player.resume()
-                    } else {
-                        player.resumeSavedSession(in: library)
-                    }
+                    // Starting playback hides the card; animating that change fades it out and
+                    // lets the shelves below slide up instead of jumping.
+                    withAnimation(.easeInOut(duration: 0.4)) { carryOn() }
                 } label: {
                     card(item)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 20)
             }
+            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+        }
+    }
+
+    private func carryOn() {
+        if player.current != nil {
+            player.resume()
+        } else {
+            player.resumeSavedSession(in: library)
         }
     }
 

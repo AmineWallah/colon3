@@ -14,7 +14,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 - **Romanized lyrics:** Japanese lyrics get romaji, Chinese pinyin with tone marks, and Korean its romanization, in smaller type under each line, worked out on the phone. Kanji in Japanese songs get their Japanese readings. Turn it off with Romanize Lyrics in the Now Playing menu.
 
 - **Landscape player:** turn the phone sideways in Now Playing for a landscape layout: the artwork, lyrics or queue on the left, and the song, controls, volume and buttons on the right. The rest of the app stays in portrait.
-- **Continue Listening:** the top of Home shows the song you stopped on, where you stopped, even after closing the app. Tap it to carry on with the same queue. Move or hide it in Settings › Appearance › Home Sections.
+- **Continue Listening:** the top of Home shows the song you stopped on, where you stopped, even after closing the app. Tap it to carry on with the same queue (the card fades away as playback starts). Move or hide it in Settings › Appearance › Home Sections.
 - **Go to Album:** in the Now Playing menu, opens the album of the song that's playing.
 
 ### Changed
