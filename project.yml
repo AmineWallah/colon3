@@ -49,6 +49,8 @@ targets:
         NSLocalNetworkUsageDescription: "colon3 uses the local network for Wi-Fi Transfer, so a computer on your Wi-Fi can add or download music."
         # Reading playlists from the Music app to import them.
         NSAppleMusicUsageDescription: "colon3 reads your Music library's playlists so it can rebuild them from your own music and Soulseek."
+        # "Save Image" in the share sheet, for the 3x3 chart.
+        NSPhotoLibraryAddUsageDescription: "colon3 saves the chart image you share to your photo library when you choose Save Image."
         # colon3://player, colon3://downloads, … from the Dynamic Island, Shortcuts and Back Tap.
         CFBundleURLTypes:
           - CFBundleURLName: com.aminewallah.colon3

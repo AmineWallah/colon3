@@ -1,5 +1,40 @@
 import Foundation
 
+/// What a chart covers: the last 7, 30 or 365 days, or everything.
+enum ChartPeriod: String, CaseIterable, Identifiable {
+    case week, month, year, allTime
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .week: return "Week"
+        case .month: return "Month"
+        case .year: return "Year"
+        case .allTime: return "All Time"
+        }
+    }
+
+    /// As written on the shared image.
+    var caption: String {
+        switch self {
+        case .week: return "Last 7 days"
+        case .month: return "Last 30 days"
+        case .year: return "Last 12 months"
+        case .allTime: return "All time"
+        }
+    }
+
+    var days: Int? {
+        switch self {
+        case .week: return 7
+        case .month: return 30
+        case .year: return 365
+        case .allTime: return nil
+        }
+    }
+}
+
 /// Listening and sharing statistics, kept on the phone only (stats.json in Application Support).
 /// Listening time is counted while audio actually plays, so seeking doesn't inflate it.
 @MainActor
@@ -28,7 +63,21 @@ final class StatsStore: ObservableObject {
         /// "yyyy-MM-dd" → seconds listened that day.
         var days: [String: Double] = [:]
         var totals = Totals()
+        /// "yyyy-MM-dd" → song id → plays that day, for the week, month and year charts.
+        /// Optional so stats saved before 1.4.0 (which only kept totals) still load.
+        var dayPlays: [String: [String: Int]]?
     }
+
+    /// An album or loose song and how much it was played in a period.
+    struct PlayedItem: Identifiable {
+        let item: LibraryItem
+        let plays: Int
+        let seconds: Double
+        var id: String { item.id }
+    }
+
+    /// Days of per-day plays kept: a year and some slack.
+    private static let dayPlaysKept = 400
 
     struct Ranked: Identifiable {
         let name: String
@@ -67,6 +116,16 @@ final class StatsStore: ObservableObject {
         if let data = try? Data(contentsOf: fileURL), let decoded = try? JSONDecoder().decode(Stored.self, from: data) {
             stored = decoded
         }
+        if stored.dayPlays == nil {
+            // Stats from before plays were kept per day: all that's known is when each song was
+            // last played, so count one play on that day. The period charts start from that.
+            var log: [String: [String: Int]] = [:]
+            for (id, stat) in stored.tracks {
+                guard stat.plays > 0, let last = stat.lastPlayed else { continue }
+                log[Self.dayFormatter.string(from: last), default: [:]][id] = 1
+            }
+            stored.dayPlays = log
+        }
     }
 
     // MARK: Recording
@@ -82,6 +141,9 @@ final class StatsStore: ObservableObject {
             $0.plays += 1
             $0.lastPlayed = Date()
         }
+        var log = stored.dayPlays ?? [:]
+        log[Self.dayFormatter.string(from: Date()), default: [:]][track.id, default: 0] += 1
+        stored.dayPlays = log
         scheduleSave()
         revision += 1
     }
@@ -104,6 +166,7 @@ final class StatsStore: ObservableObject {
 
     func reset() {
         stored = Stored()
+        stored.dayPlays = [:]
         save()
     }
 
@@ -191,6 +254,43 @@ final class StatsStore: ObservableObject {
             .map { Ranked(name: $0.album, detail: $0.artist, plays: plays[$0] ?? 0, seconds: seconds[$0] ?? 0) }
     }
 
+    /// The most played albums and loose songs in a period, most played first; ties go to the
+    /// one listened to longest overall. Only things still in the library (they need a cover).
+    func topItems(_ period: ChartPeriod, limit: Int, in library: LibraryStore) -> [PlayedItem] {
+        var playsBySong: [String: Int] = [:]
+        if let days = period.days {
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            guard let first = calendar.date(byAdding: .day, value: 1 - days, to: today) else { return [] }
+            // Day keys are yyyy-MM-dd, so they sort like dates.
+            let firstKey = Self.dayFormatter.string(from: first)
+            for (day, counts) in stored.dayPlays ?? [:] where day >= firstKey {
+                for (id, count) in counts { playsBySong[id, default: 0] += count }
+            }
+        } else {
+            for (id, stat) in stored.tracks where stat.plays > 0 { playsBySong[id] = stat.plays }
+        }
+
+        var items: [String: LibraryItem] = [:]
+        var plays: [String: Int] = [:]
+        var seconds: [String: Double] = [:]
+        for (id, count) in playsBySong {
+            guard let track = library.track(id: id) else { continue }
+            let item = library.album(containing: track).map(LibraryItem.album) ?? .single(track)
+            items[item.id] = item
+            plays[item.id, default: 0] += count
+            seconds[item.id, default: 0] += stored.tracks[id]?.seconds ?? 0
+        }
+        let ranked = items.values
+            .map { PlayedItem(item: $0, plays: plays[$0.id] ?? 0, seconds: seconds[$0.id] ?? 0) }
+            .sorted { lhs, rhs in
+                if lhs.plays != rhs.plays { return lhs.plays > rhs.plays }
+                if lhs.seconds != rhs.seconds { return lhs.seconds > rhs.seconds }
+                return lhs.item.title < rhs.item.title
+            }
+        return Array(ranked.prefix(limit))
+    }
+
     /// Listening per day for the last `count` days, oldest first, including zero days.
     func lastDays(_ count: Int) -> [DayTotal] {
         let calendar = Calendar.current
@@ -240,6 +340,15 @@ final class StatsStore: ObservableObject {
         for (day, seconds) in incoming.days {
             stored.days[day] = max(stored.days[day] ?? 0, seconds)
         }
+        var log = stored.dayPlays ?? [:]
+        for (day, counts) in incoming.dayPlays ?? [:] {
+            for (oldID, count) in counts {
+                let id = remap[oldID] ?? oldID
+                let known = log[day]?[id] ?? 0
+                log[day, default: [:]][id] = max(known, count)
+            }
+        }
+        stored.dayPlays = log
         var totals = stored.totals
         totals.downloadedBytes = max(totals.downloadedBytes, incoming.totals.downloadedBytes)
         totals.downloadedFiles = max(totals.downloadedFiles, incoming.totals.downloadedFiles)
@@ -260,6 +369,13 @@ final class StatsStore: ObservableObject {
         } else {
             stored.tracks[newID] = stat
         }
+        var log = stored.dayPlays ?? [:]
+        for day in Array(log.keys) {
+            guard let count = log[day]?.removeValue(forKey: oldID) else { continue }
+            let known = log[day]?[newID] ?? 0
+            log[day]?[newID] = max(known, count)
+        }
+        stored.dayPlays = log
         scheduleSave()
     }
 
@@ -276,6 +392,12 @@ final class StatsStore: ObservableObject {
     func save() {
         saveScheduled = false
         revision += 1
+        // Per-day plays older than the longest chart aren't needed.
+        if let log = stored.dayPlays, log.count > Self.dayPlaysKept,
+           let oldest = Calendar.current.date(byAdding: .day, value: -Self.dayPlaysKept, to: Date()) {
+            let oldestKey = Self.dayFormatter.string(from: oldest)
+            stored.dayPlays = log.filter { $0.key >= oldestKey }
+        }
         let snapshot = stored
         let url = fileURL
         Task.detached(priority: .background) {

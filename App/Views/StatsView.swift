@@ -26,6 +26,16 @@ struct StatsView: View {
             }
 
             Section {
+                NavigationLink {
+                    ChartCollageView()
+                } label: {
+                    Label("3\u{00D7}3 Chart", systemImage: "square.grid.3x3.fill")
+                }
+            } footer: {
+                Text("Your nine most played albums of the week, month, year or all time, as an image to share.")
+            }
+
+            Section {
                 Picker("Range", selection: $range) {
                     Text("7 Days").tag(7)
                     Text("14 Days").tag(14)
