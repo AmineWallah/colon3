@@ -30,7 +30,7 @@
 <div class="card">
   <img class="icon" src="icon.png" alt="">
   <h1>colon3</h1>
-  <p class="meta">Soulseek client and music player for iOS</p>
+  <p class="meta" id="meta">Soulseek client and music player for iOS</p>
 
   <a class="button altstore" id="altstore" href="#">Add to AltStore</a>
   <a class="button sidestore" id="sidestore" href="#">Add to SideStore</a>
@@ -40,13 +40,23 @@
     <button type="button" id="copy">Copy</button>
   </div>
 
-  <p class="note">Open this page on your iPhone with AltStore or SideStore installed. The buttons add the colon3 source; then install colon3 from it, and new releases show up under Updates. Or copy the address and add it under Sources › +.</p>
+  <p class="note">Open this page on your iPhone or iPad with AltStore or SideStore installed. The buttons add the colon3 source; then install colon3 from it, and new releases show up under Updates. Or copy the address and add it under Sources › +.</p>
+  <p class="note" id="channel">This is the stable source. <a class="link" href="source.html?beta">Get pre-releases instead</a> with the beta source.</p>
   <p class="note"><a class="link" href="https://github.com/AmineWallah/colon3">colon3 on GitHub</a> · <a class="link" href="privacy.html">Privacy</a></p>
 </div>
 </main>
 <script>
+  // source.html?beta is the page for the beta source: pre-releases as well as stable releases.
+  const beta = new URLSearchParams(location.search).has("beta");
+  if (beta) {
+    document.title = "Add colon3 Beta to AltStore or SideStore";
+    document.querySelector("h1").textContent = "colon3 Beta";
+    document.getElementById("meta").textContent = "Pre-releases as they come out, and the stable releases too";
+    document.getElementById("channel").innerHTML =
+      'This is the beta source: newer features, rougher edges. <a class="link" href="source.html">Back to the stable source</a>.';
+  }
   // The source sits next to this page, wherever the site is hosted.
-  const source = new URL("altstore.json", location.href).href;
+  const source = new URL(beta ? "altstore-beta.json" : "altstore.json", location.href).href;
   const encoded = encodeURIComponent(source);
   document.getElementById("source").textContent = source;
   document.getElementById("altstore").href = "altstore://source?url=" + encoded;

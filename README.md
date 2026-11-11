@@ -70,7 +70,8 @@ Packages/SoulseekKit/      Protocol package (no dependencies)
 scripts/gen_fixtures.py    regenerates the test fixtures from Nicotine+'s encoders
 scripts/make-ota-site.py   builds an over-the-air install page for a signed IPA
 scripts/fetch-discord-sdk.sh  CI: fetches Discord's Social SDK from a private repository
-scripts/make-altstore-source.py  CI: builds the AltStore / SideStore source from the GitHub releases
+scripts/make-altstore-source.py  CI: builds an AltStore / SideStore source (stable or beta) from the GitHub releases
+scripts/update-altstore-sources.sh  CI: rebuilds both sources into the Pages site
 DiscordBridge/             Objective-C++ bridge to Discord's SDK (only built with project-discord.yml)
 docs/logo.png              the README's icon (AppIcon with rounded corners)
 docs/screenshots/          the README's screenshots
@@ -228,11 +229,19 @@ On your iPhone, open [the source page](https://aminewallah.github.io/colon3/sour
 https://aminewallah.github.io/colon3/altstore.json
 ```
 
-Then install colon3 from it. New stable releases show up under **Updates**, and the store's weekly refresh keeps the signature alive. The source lists the last five stable releases (beta builds stay on the install page).
+Then install colon3 from it. New stable releases show up under **Updates**, and the store's weekly refresh keeps the signature alive. The source lists the last five stable releases.
+
+For pre-releases, add the beta source instead ([its page](https://aminewallah.github.io/colon3/source.html?beta)):
+
+```
+https://aminewallah.github.io/colon3/altstore-beta.json
+```
+
+It lists betas as well as stable releases, newest first, so you always get the newest build of either kind. Betas of one version share its version number and differ by build number, so the source lists only the newest build of each version.
 
 The store signs colon3 with your own Apple ID. With a free account that means at most 3 sideloaded apps at once, a refresh every 7 days, and colon3 uses 2 of the 10 App IDs a week allows (the app and its Live Activity widget). The store also changes the bundle ID; Google Drive backup and Discord sign-in still work, since both sign in through a web page.
 
-For maintainers: CI builds `altstore.json` with every Pages deploy from the GitHub releases (`scripts/make-altstore-source.py` reads each release's IPA for its exact version, build number and usage descriptions, which AltStore checks before installing). Tagging a release asks for a main build afterwards so the new version appears without another push.
+For maintainers: CI builds `altstore.json` and `altstore-beta.json` with every Pages deploy from the GitHub releases (`scripts/update-altstore-sources.sh` runs `scripts/make-altstore-source.py` for each, which reads each release's IPA for its exact version, build number and usage descriptions; AltStore checks those before installing). Tagging a stable release asks for a main build afterwards so the new version appears without another push. Tagging a pre-release asks for a sources-only run on beta (the `sources` job), which republishes the site with the sources refreshed and builds nothing.
 
 ## Using it
 

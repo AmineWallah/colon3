@@ -18,6 +18,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 - **Go to Album:** in the Now Playing menu, opens the album of the song that's playing.
 - **Merge albums:** when one album shows up as several (a disc each, or songs tagged differently), select them in the Library and tap the merge button, or open one and choose Merge with Other Albums. Their songs join the album you keep; albums with their own track numbers become extra discs. No files or tags are changed, and Separate Merged Albums in the album's menu undoes it.
 - **3×3 chart:** Stats › 3×3 Chart draws your nine most played albums of the week, month, year or all time as one image, with or without names and play counts, ready to share. Week, month and year count plays day by day from this version on; from before, only each song's last play is known.
+- **Beta source for AltStore and SideStore:** add `https://aminewallah.github.io/colon3/altstore-beta.json` under Sources to get pre-releases (and stable releases) as updates in the store. The stable source is unchanged.
 - **iPad:** colon3 now runs on iPad too. The tabs sit in a bar at the top that opens into a sidebar, every screen turns every way, grids and shelves show more per row, the album page puts the cover beside the title, and the player fills the screen with the artwork and controls on the left and the lyrics or queue beside them (a chevron or a swipe down closes it).
 
 ### Fixed

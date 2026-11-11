@@ -3,8 +3,9 @@ name: CI/CD
 # Every push and PR: protocol tests on Linux, then an unsigned IPA from macOS.
 # Pushes to main: also sign with the distribution cert (if the secrets are set)
 #   and publish an over-the-air install page on GitHub Pages.
-# Tags v*: also attach the unsigned IPA to a GitHub Release, then rebuild main so the Pages
-#   site's AltStore / SideStore source (altstore.json) lists it.
+# Tags v*: also attach the unsigned IPA to a GitHub Release, then refresh the Pages site's
+#   AltStore / SideStore sources so they list it: altstore.json (stable releases, by
+#   rebuilding main) or altstore-beta.json (pre-releases too, by the sources job, no build).
 
 on:
   push:
@@ -13,9 +14,15 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      sources_only:
+        description: "Only refresh the AltStore / SideStore sources on the Pages site (no build)"
+        type: boolean
+        default: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A sources-only run gets its own group, so it never cancels a build of the same branch.
+  group: ${{ github.workflow }}-${{ github.ref }}${{ inputs.sources_only && '-sources' || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -28,6 +35,8 @@ env:
 jobs:
   test:
     name: Protocol tests (Linux)
+    # Everything else needs this job, so a sources-only run skips the lot.
+    if: ${{ !inputs.sources_only }}
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
@@ -249,18 +258,10 @@ jobs:
           echo "Install page ($CHANNEL): $BASE/$mine" >> "$GITHUB_STEP_SUMMARY"
           # Static pages at the site root, like the privacy policy Google's consent screen links to.
           cp pages/*.html site/
-          # AltStore / SideStore source for the stable releases (README › AltStore and SideStore).
-          # Starts from the live copy, so a failed update keeps the old one instead of none.
+          # AltStore / SideStore sources: stable releases, and one with pre-releases too
+          # (README › AltStore and SideStore).
           cp App/Assets.xcassets/AppIcon.appiconset/AppIcon.png site/icon.png
-          curl -fsSL "$BASE/altstore.json" -o site/altstore.json || rm -f site/altstore.json
-          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" > "$RUNNER_TEMP/releases.json" || true
-          # --previous: releases it already lists aren't downloaded again (that would add to the
-          # download counter on every deploy).
-          python3 scripts/make-altstore-source.py --releases "$RUNNER_TEMP/releases.json" \
-            --base-url "$BASE" --ipa-dir "$RUNNER_TEMP/ipas" --previous site/altstore.json \
-            --out "$RUNNER_TEMP/altstore.json" \
-            && cp "$RUNNER_TEMP/altstore.json" site/altstore.json \
-            || echo "::warning::AltStore source not updated; keeping the previous one."
+          scripts/update-altstore-sources.sh "$BASE" site
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.check.outputs.enabled == 'true'
@@ -290,6 +291,64 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
+  sources:
+    name: Refresh AltStore sources
+    # Asked for by the release job after a pre-release: publishes the Pages site again as it
+    # is, with the sources rebuilt from the releases list. No app build, so the install pages
+    # keep their build.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sources_only }}
+    runs-on: ubuntu-latest
+    # The same group as the deploy job: the copy of the live site can't go stale under it.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Copy the live site and rebuild the sources
+        env:
+          BASE: ${{ steps.pages.outputs.base_url }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Both install pages as they are now. A channel that was never published (404) is
+          # left out; any other failure stops here rather than publish a site with holes.
+          for prefix in "" beta/; do
+            mkdir -p "site/$prefix"
+            code="$(curl -sSL --retry 3 -o "site/${prefix}index.html" -w '%{http_code}' "$BASE/${prefix}index.html" || echo 000)"
+            if [ "$code" = 404 ]; then
+              rm -f "site/${prefix}index.html"
+              continue
+            fi
+            if [ "$code" != 200 ]; then
+              echo "::error::Couldn't read $BASE/${prefix}index.html (HTTP $code)"
+              exit 1
+            fi
+            for f in manifest.plist version.json colon3.ipa; do
+              curl -fsSL --retry 3 "$BASE/$prefix$f" -o "site/$prefix$f"
+            done
+          done
+          cp pages/*.html site/
+          cp App/Assets.xcassets/AppIcon.appiconset/AppIcon.png site/icon.png
+          scripts/update-altstore-sources.sh "$BASE" site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
   release:
     name: GitHub Release
     needs: build
@@ -297,7 +356,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      # To rebuild main's Pages site afterwards, which regenerates the AltStore source.
+      # To refresh the Pages site afterwards, which regenerates the AltStore sources.
       actions: write
     steps:
       - uses: actions/checkout@v4
@@ -323,10 +382,16 @@ jobs:
             --title "$title" \
             "${args[@]}"
 
-      - name: Update the AltStore source
-        # The source is built with the Pages site; a release made with this job's token doesn't
-        # start other workflows, so ask for a main build. Stable releases only.
-        if: ${{ !contains(github.ref_name, '-') }}
+      - name: Update the AltStore sources
+        # The sources are built with the Pages site; a release made with this job's token
+        # doesn't start other workflows, so ask for a run. A stable release rebuilds main
+        # (both sources list it); a pre-release only refreshes the sources from the beta
+        # branch, without a build.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run build.yml --ref main --repo "$GITHUB_REPOSITORY"
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh workflow run build.yml --ref beta --repo "$GITHUB_REPOSITORY" -f sources_only=true
+          else
+            gh workflow run build.yml --ref main --repo "$GITHUB_REPOSITORY"
+          fi
