@@ -46,7 +46,8 @@ enum HomeSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .continueListening: return "Continue Listening"
+        // Continue Listening grew into the Top Picks shelf; the stored name stays.
+        case .continueListening: return "Top Picks"
         case .trending: return "Trending Songs"
         case .top100: return "Top 100"
         case .releases: return "Recent Releases"
