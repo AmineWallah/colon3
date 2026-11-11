@@ -22,6 +22,7 @@ final class LibraryStore: ObservableObject {
 
     private var cache: [String: CachedEntry] = [:]
     private var rescanQueued = false
+    private var rescanSoonScheduled = false
     private var albumByTrack: [String: Album] = [:]
     private var tracksByID: [String: Track] = [:]
     private var albumsByID: [String: Album] = [:]
@@ -142,20 +143,29 @@ final class LibraryStore: ObservableObject {
         }
     }
 
-    private func apply(_ result: ScanResult) {
-        cache = result.cache
-        let grouped = Self.group(result.tracks, root: root)
-        tracks = result.tracks
-        albums = grouped.albums
-        items = grouped.items
-        artists = grouped.artists
-        tracksByID = Dictionary(result.tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        albumsByID = Dictionary(grouped.albums.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var byTrack: [String: Album] = [:]
-        for album in grouped.albums {
-            for track in album.tracks { byTrack[track.id] = album }
+    /// A rescan a moment from now. Files that finish downloading close together (an album)
+    /// share one scan instead of each starting their own.
+    func rescanSoon() {
+        guard !rescanSoonScheduled else { return }
+        rescanSoonScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard let self else { return }
+            self.rescanSoonScheduled = false
+            self.rescan()
         }
-        albumByTrack = byTrack
+    }
+
+    private func apply(_ result: ScanResult) {
+        // Albums, artists and the lookup tables were built by the scan, off the main thread.
+        cache = result.cache
+        tracks = result.tracks
+        albums = result.albums
+        items = result.items
+        artists = result.artists
+        tracksByID = result.tracksByID
+        albumsByID = result.albumsByID
+        albumByTrack = result.albumByTrack
         scanRevision += 1
         isScanning = false
         onSharesChanged?(result.shares)
@@ -182,6 +192,12 @@ final class LibraryStore: ObservableObject {
         let tracks: [Track]
         let shares: [LocalShare]
         let cache: [String: CachedEntry]
+        let albums: [Album]
+        let items: [LibraryItem]
+        let artists: [ArtistEntry]
+        let tracksByID: [String: Track]
+        let albumsByID: [String: Album]
+        let albumByTrack: [String: Album]
     }
 
     private nonisolated static func scan(root: URL, cache: [String: CachedEntry]) async -> ScanResult {
@@ -235,7 +251,17 @@ final class LibraryStore: ObservableObject {
             let virtualPath = (["colon3"] + file.relativePath.split(separator: "/").map(String.init)).joined(separator: "\\")
             shares.append(LocalShare(virtualPath: virtualPath, url: file.url, size: UInt64(max(file.size, 0))))
         }
-        return ScanResult(tracks: tracks, shares: shares, cache: newCache)
+        let grouped = group(tracks, root: root)
+        var albumByTrack: [String: Album] = [:]
+        for album in grouped.albums {
+            for track in album.tracks { albumByTrack[track.id] = album }
+        }
+        return ScanResult(
+            tracks: tracks, shares: shares, cache: newCache,
+            albums: grouped.albums, items: grouped.items, artists: grouped.artists,
+            tracksByID: Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+            albumsByID: Dictionary(grouped.albums.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+            albumByTrack: albumByTrack)
     }
 
     private struct FileEntry: Sendable {

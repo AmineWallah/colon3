@@ -135,6 +135,12 @@ final class SoulseekModel: ObservableObject {
     private var flushScheduled = false
     private var started = false
     private var coverRequested = Set<String>()
+    /// Byte counts of running transfers, held back and applied together twice a second.
+    /// Every file reports about three times a second, and each change to `downloads` redraws
+    /// every screen that watches this model, so a dozen files at once made the app stutter.
+    private var pendingDownloadProgress: [DownloadID: DownloadUpdate] = [:]
+    private var pendingUploadProgress: [DownloadID: UploadUpdate] = [:]
+    private var progressFlushScheduled = false
 
     init(library: LibraryStore) {
         self.library = library
@@ -448,17 +454,29 @@ final class SoulseekModel: ObservableObject {
             }
 
         case let .download(update):
+            let existing = downloads.firstIndex(where: { $0.id == update.id })
+            // Only the byte count moved: keep it for the next flush.
+            if update.state == .transferring, let existing, downloads[existing].state == .transferring {
+                pendingDownloadProgress[update.id] = update
+                scheduleProgressFlush()
+                downloadEvents.send(update)
+                return
+            }
+            pendingDownloadProgress[update.id] = nil
             if case .completed = update.state, !LibraryStore.sidecarExtensions.contains(SharedFile(path: update.id.path, size: 0).fileExtension) {
                 let wasCompleted: Bool = {
-                    guard let old = downloads.first(where: { $0.id == update.id }), case .completed = old.state else { return false }
+                    guard let existing, case .completed = downloads[existing].state else { return false }
                     return true
                 }()
                 if !wasCompleted { stats?.recordDownload(bytes: update.size, from: update.id.username) }
             }
-            if let index = downloads.firstIndex(where: { $0.id == update.id }) {
-                downloads[index].state = update.state
-                downloads[index].received = update.received
-                downloads[index].size = update.size
+            if let existing {
+                // One change to the published list, not three.
+                var item = downloads[existing]
+                item.state = update.state
+                item.received = update.received
+                item.size = update.size
+                downloads[existing] = item
             } else {
                 downloads.insert(DownloadItem(id: update.id, state: update.state,
                                               received: update.received, size: update.size), at: 0)
@@ -474,19 +492,30 @@ final class SoulseekModel: ObservableObject {
                         library.bumpArtwork()
                     }
                 } else {
-                    library.rescan()
+                    // Soon, not now: the rest of an album usually lands within the second.
+                    library.rescanSoon()
                 }
             }
             downloadEvents.send(update)
 
         case let .upload(update):
-            if update.state == .completed, uploads.first(where: { $0.id == update.id })?.state != .completed {
+            let existing = uploads.firstIndex(where: { $0.id == update.id })
+            if update.state == .transferring, let existing, uploads[existing].state == .transferring {
+                pendingUploadProgress[update.id] = update
+                scheduleProgressFlush()
+                return
+            }
+            pendingUploadProgress[update.id] = nil
+            let alreadyCompleted = existing.map { uploads[$0].state == .completed } ?? false
+            if update.state == .completed, !alreadyCompleted {
                 stats?.recordUpload(bytes: update.size, to: update.id.username)
             }
-            if let index = uploads.firstIndex(where: { $0.id == update.id }) {
-                uploads[index].state = update.state
-                uploads[index].sent = update.sent
-                uploads[index].size = update.size
+            if let existing {
+                var item = uploads[existing]
+                item.state = update.state
+                item.sent = update.sent
+                item.size = update.size
+                uploads[existing] = item
             } else {
                 uploads.insert(UploadItem(id: update.id, state: update.state, sent: update.sent, size: update.size), at: 0)
                 if uploads.count > 100 { uploads.removeLast(uploads.count - 100) }
@@ -494,6 +523,46 @@ final class SoulseekModel: ObservableObject {
 
         case let .log(line):
             appendLog(line)
+        }
+    }
+
+    private func scheduleProgressFlush() {
+        guard !progressFlushScheduled else { return }
+        progressFlushScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            self?.flushProgress()
+        }
+    }
+
+    /// Applies the held-back byte counts with one change to each published list.
+    private func flushProgress() {
+        progressFlushScheduled = false
+        if !pendingDownloadProgress.isEmpty {
+            var updated = downloads
+            var changed = false
+            for index in updated.indices {
+                guard let update = pendingDownloadProgress[updated[index].id],
+                      updated[index].state == .transferring else { continue }
+                updated[index].received = update.received
+                updated[index].size = update.size
+                changed = true
+            }
+            pendingDownloadProgress.removeAll()
+            if changed { downloads = updated }
+        }
+        if !pendingUploadProgress.isEmpty {
+            var updated = uploads
+            var changed = false
+            for index in updated.indices {
+                guard let update = pendingUploadProgress[updated[index].id],
+                      updated[index].state == .transferring else { continue }
+                updated[index].sent = update.sent
+                updated[index].size = update.size
+                changed = true
+            }
+            pendingUploadProgress.removeAll()
+            if changed { uploads = updated }
         }
     }
 
