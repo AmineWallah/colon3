@@ -5,25 +5,26 @@
 <h1 align="center">colon3 (:3)</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-iOS%2018.0%2B-0a84ff" alt="Platform: iOS 18.0+">
+  <img src="https://img.shields.io/badge/Platform-iOS%20%2F%20iPadOS%2018.0%2B-0a84ff" alt="Platform: iOS and iPadOS 18.0+">
   <a href="https://github.com/AmineWallah/colon3/releases/latest"><img src="https://img.shields.io/github/v/release/AmineWallah/colon3?label=Latest%20release&color=brightgreen" alt="Latest release"></a>
   <a href="https://github.com/AmineWallah/colon3/releases"><img src="https://img.shields.io/github/downloads/AmineWallah/colon3/total?label=Download&color=brightgreen" alt="Downloads"></a>
   <a href="https://aminewallah.github.io/colon3/source.html"><img src="https://img.shields.io/badge/AltStore%20%2F%20SideStore-Add%20source-8e44ad" alt="Add the AltStore / SideStore source"></a>
   <a href="https://liberapay.com/AmineWallah/donate"><img src="https://img.shields.io/liberapay/receives/AmineWallah?logo=liberapay&label=Liberapay&color=f6c915" alt="Support on Liberapay"></a>
 </p>
 
-A native Soulseek client and music player for iOS. Search the Soulseek network, download straight to the phone, and play from a local library. No server or desktop client in between.
+A native Soulseek client and music player for iPhone and iPad. Search the Soulseek network, download straight to the device, and play from a local library. No server or desktop client in between.
 
-- **Library:** albums and loose songs in a 2-column grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, and import from Files or other apps.
+- **Library:** albums and loose songs in a grid, A–Z side scrubber, Songs, Artists and Playlists views, favourites, multi-select, merging albums that got split (discs, differing tags) without touching the files, and import from Files or other apps.
 - **Playlists:** your own (reorder, rename, .m3u8 import/export), plus Favorite Songs and Most Played.
-- **Home:** Continue Listening (pick up where you stopped), then Apple Music-style shelves for trending songs, the top 100, recent releases and recently played, with one-tap downloads from Soulseek.
+- **Home:** Top Picks tiles (Continue Listening where you stopped, Favourites Mix, Most Played, Not Played Lately, your newest album), then Apple Music-style shelves for trending songs, the top 100, recent releases and recently played, with one-tap downloads from Soulseek.
 - **Spotify, Apple Music and YouTube Music import:** rebuild a Spotify playlist or your Liked Songs, an Apple Music playlist, or a YouTube Music playlist link from your library, downloading what's missing from Soulseek in the original order.
 - **Artwork:** a cover you picked (Photos, Files, or Find Cover Online's top five from Apple Music, Deezer and MusicBrainz), then cover files from the album folder, then art embedded in the music, then an online lookup (Apple Music, then Deezer and MusicBrainz). Album downloads fetch the folder's cover (and any .lrc lyrics) from the peer too.
-- **Player:** Apple Music-style full screen (portrait and landscape) with synced lyrics (a .lrc next to the song, else LRCLIB, or pick them yourself with Find Lyrics; Japanese, Chinese and Korean lines get romaji, pinyin or romanization underneath), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
+- **Player:** Apple Music-style full screen (portrait and landscape; on iPad, artwork and controls with the lyrics or queue beside them) with synced lyrics (a .lrc next to the song, else LRCLIB, or pick them yourself with Find Lyrics; Japanese, Chinese and Korean lines get romaji, pinyin or romanization underneath), queue editing, shuffle and repeat, playback speed, AirPlay, and the Liquid Glass mini player on iOS 26+.
 - **Autoplay:** when the queue ends, similar songs keep playing (Last.fm similar tracks and artists, else the same artist, most played or random). Picks you don't have get a Download button (or download on their own, if you turn that on) and play once they're downloaded from Soulseek.
 - **Sound:** a 10-band graphic EQ with presets, a parametric EQ that loads your headphones' AutoEQ profile, and a bit-perfect mode for USB DACs. Multichannel and Dolby Atmos files play through AVPlayer with spatial audio instead, with no EQ.
 - **Transfers:** multi-select retry/cancel/clear/delete, a Live Activity, Seeding Mode, and Wi-Fi Transfer from a computer's browser.
-- **Stats:** listening time, top songs/artists/albums, upload/download totals.
+- **Stats:** listening time, top songs/artists/albums, upload/download totals, and a 3×3 chart of your most played albums (week, month, year or all time) to share as an image.
+- **iPad:** the same app with the tabs in a top bar or sidebar, wider grids and shelves, and a two-column player.
 - **Storage:** what takes up space by album, artist and song, plus songs you haven't played in 30 days, ready to delete.
 - **Backup:** your song list, playlists, favourites, stats and settings to Google Drive (daily if you like) or a file, optionally with the music itself. Restoring brings it all back and downloads missing songs from Drive or Soulseek.
 - **Last.fm** scrobbling with your own API key, which autoplay also uses for recommendations.

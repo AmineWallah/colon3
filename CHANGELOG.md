@@ -14,10 +14,17 @@ CI uses the section matching the build's version as the GitHub Release notes and
 - **Romanized lyrics:** Japanese lyrics get romaji, Chinese pinyin with tone marks, and Korean its romanization, in smaller type under each line, worked out on the phone. Kanji in Japanese songs get their Japanese readings. Turn it off with Romanize Lyrics in the Now Playing menu.
 
 - **Landscape player:** turn the phone sideways in Now Playing for a landscape layout: the artwork, lyrics or queue on the left, and the song, controls, volume and buttons on the right. The rest of the app stays in portrait.
-- **Continue Listening:** the top of Home shows the song you stopped on, where you stopped, even after closing the app. Tap it to carry on with the same queue (the card fades away as playback starts). Move or hide it in Settings › Appearance › Home Sections.
+- **Top Picks:** the top of Home is a row of tall tiles like Apple Music's. The first is **Continue Listening**: the song you stopped on, where you stopped, even after closing the app; tap it to carry on with the same queue (it fades away as playback starts). After it: Favourites Mix, Most Played, Not Played Lately (songs you haven't played in 30 days), your newest album and the last album you played. Move or hide the row in Settings › Appearance › Home Sections.
 - **Go to Album:** in the Now Playing menu, opens the album of the song that's playing.
+- **Merge albums:** when one album shows up as several (a disc each, or songs tagged differently), select them in the Library and tap the merge button, or open one and choose Merge with Other Albums. Their songs join the album you keep; albums with their own track numbers become extra discs. No files or tags are changed, and Separate Merged Albums in the album's menu undoes it.
+- **3×3 chart:** Stats › 3×3 Chart draws your nine most played albums of the week, month, year or all time as one image, with or without names and play counts, ready to share. Week, month and year count plays day by day from this version on; from before, only each song's last play is known.
+- **iPad:** colon3 now runs on iPad too. The tabs sit in a bar at the top that opens into a sidebar, every screen turns every way, grids and shelves show more per row, the album page puts the cover beside the title, and the player fills the screen with the artwork and controls on the left and the lyrics or queue beside them (a chevron or a swipe down closes it).
+
+### Fixed
+- **Stutter while several files download:** every running download redrew most of the app about three times a second, and every finished file rescanned the whole library and reloaded every cover on screen. Progress is now applied twice a second for all files together, files that finish close together share one rescan, and the rescan's sorting into albums no longer runs on the main thread.
 
 ### Changed
+- **Home title:** "Home" now sits on the same line as the country button instead of a line of its own below it.
 - **Missing covers:** when Apple has no cover for an album or song, colon3 now also looks on Deezer and MusicBrainz's Cover Art Archive, and uses what it finds there if the title and artist match.
 
 ## 1.3.1
