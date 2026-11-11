@@ -39,8 +39,10 @@ targets:
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
-        # Landscape is only allowed while the full-screen player is up (OrientationLock).
+        # iPhone: landscape is only allowed while the full-screen player is up (OrientationLock).
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        # iPad: every screen turns every way.
+        "UISupportedInterfaceOrientations~ipad": [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         # Wi-Fi Transfer serves a page to computers on the same network.
@@ -74,7 +76,7 @@ targets:
         COLON3_GOOGLE_CLIENT_ID: ""
         COLON3_DISCORD_APP_ID: ""
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         # Set this to your Apple ID team in Xcode (Signing & Capabilities) when building in the VM.
         DEVELOPMENT_TEAM: ""
@@ -101,6 +103,6 @@ targets:
         MARKETING_VERSION: "1.4.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""

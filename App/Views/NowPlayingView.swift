@@ -3,9 +3,10 @@ import MediaPlayer
 import SwiftUI
 
 /// Full-screen player modelled on Apple Music: big artwork, or lyrics / queue with a compact
-/// header, over a blurred copy of the artwork.
+/// header, over a blurred copy of the artwork. A wide screen (an iPad on its side) shows the
+/// artwork and controls on the left with the lyrics or queue beside them.
 struct NowPlayingView: View {
-    enum Mode {
+    enum Mode: String {
         case artwork, lyrics, queue
     }
 
@@ -14,6 +15,10 @@ struct NowPlayingView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var router: AppRouter
     @State private var mode: Mode = .artwork
+    /// The wide layout keeps its own choice of side pane (lyrics to begin with), remembered
+    /// between visits; the other layouts start on the artwork each time.
+    @AppStorage("player.widePane") private var widePaneRaw = Mode.lyrics.rawValue
+    @State private var isWide = false
     @State private var showEqualizer = false
     @State private var showSpeed = false
     @AppStorage("lyrics.romanize") private var romanizeLyrics = true
@@ -21,15 +26,41 @@ struct NowPlayingView: View {
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
+            // Room for two columns with full-size controls: an iPad on its side.
+            let wide = landscape && geometry.size.height >= 600
             Group {
-                if landscape {
+                if wide {
+                    wideLayout
+                } else if landscape {
                     landscapeLayout
                 } else {
+                    // Capped so an upright iPad doesn't stretch the phone layout across the screen.
                     portraitLayout
+                        .frame(maxWidth: 560)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .onChange(of: wide, initial: true) { _, value in isWide = value }
         }
+        .overlay(alignment: .topLeading) {
+            // Full screen on iPad, so there's no sheet to pull down.
+            if DeviceLayout.isPad {
+                Button {
+                    router.showPlayer = false
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.title3.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 20)
+                .padding(.top, 10)
+                .accessibilityLabel("Close player")
+            }
+        }
+        .modifier(SwipeDownToClose(enabled: DeviceLayout.isPad) { router.showPlayer = false })
         .foregroundStyle(.white)
         .background { PlayerBackground(image: player.artwork) }
         .environment(\.colorScheme, .dark)
@@ -40,6 +71,7 @@ struct NowPlayingView: View {
                 .presentationDetents([.medium, .large])
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: mode)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: widePaneRaw)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpeed)
         .onAppear { OrientationLock.allowLandscape(true) }
         .onDisappear { OrientationLock.allowLandscape(false) }
@@ -137,6 +169,68 @@ struct NowPlayingView: View {
         }
     }
 
+    /// What's shown beside (or instead of) the artwork in the layout on screen.
+    private var shownMode: Mode {
+        isWide ? (Mode(rawValue: widePaneRaw) ?? .lyrics) : mode
+    }
+
+    private func show(_ target: Mode) {
+        if isWide {
+            widePaneRaw = target.rawValue
+        } else {
+            mode = target
+        }
+    }
+
+    /// Wide screens: artwork, song and controls in a column on the left, like the portrait
+    /// player, with the lyrics or the queue filling the rest. With neither open, the column
+    /// sits in the middle.
+    @ViewBuilder
+    private var wideLayout: some View {
+        if let track = player.current {
+            let pane = shownMode
+            HStack(spacing: 48) {
+                VStack(spacing: 0) {
+                    largeArtwork
+                    titleRow(track, compact: false)
+                        .padding(.top, 20)
+                    ScrubBar()
+                        .padding(.top, 14)
+                    transport
+                        .padding(.vertical, 16)
+                    if showSpeed {
+                        SpeedControl()
+                            .padding(.bottom, 12)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    VolumeRow()
+                    bottomBar
+                        .padding(.top, 14)
+                }
+                .frame(maxWidth: pane == .artwork ? 520 : 440)
+
+                if pane == .lyrics {
+                    ClockedLyrics(track: track, albumTitle: library.album(containing: track)?.title ?? track.album)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                } else if pane == .queue {
+                    QueueView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, 48)
+            .padding(.top, 56)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Not Playing")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     private var largeArtwork: some View {
         // The square comes from Color.clear; the image sits in an overlay so an odd-shaped one
         // can never make the layout wider than the screen.
@@ -171,7 +265,7 @@ struct NowPlayingView: View {
                 .frame(width: 66, height: 66)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
-                .onTapGesture { mode = .artwork }
+                .onTapGesture { show(.artwork) }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
@@ -221,7 +315,7 @@ struct NowPlayingView: View {
                 Label("Romanize Lyrics", systemImage: "character.phonetic")
             }
             Button {
-                mode = .lyrics
+                show(.lyrics)
                 Task {
                     await LyricsService.shared.forget(cacheKey: track.id)
                     router.lyricsChanged()
@@ -230,13 +324,13 @@ struct NowPlayingView: View {
                 Label("Search Lyrics Again", systemImage: "quote.bubble")
             }
             Button {
-                mode = .lyrics
+                show(.lyrics)
                 router.findLyrics(for: track)
             } label: {
                 Label("Find Lyrics…", systemImage: "magnifyingglass")
             }
             Button {
-                mode = .lyrics
+                show(.lyrics)
                 router.importLyrics(for: track)
             } label: {
                 Label("Import Lyrics (.lrc)…", systemImage: "doc.text")
@@ -316,16 +410,39 @@ struct NowPlayingView: View {
     }
 
     private func modeButton(_ target: Mode, symbol: String) -> some View {
-        Button {
-            mode = mode == target ? .artwork : target
+        let isOn = shownMode == target
+        return Button {
+            show(isOn ? .artwork : target)
         } label: {
-            Image(systemName: mode == target ? symbol + (symbol == "quote.bubble" ? ".fill" : "") : symbol)
+            Image(systemName: isOn ? symbol + (symbol == "quote.bubble" ? ".fill" : "") : symbol)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(mode == target ? Color.black.opacity(0.75) : Color.white.opacity(0.7))
+                .foregroundStyle(isOn ? Color.black.opacity(0.75) : Color.white.opacity(0.7))
                 .frame(width: 44, height: 44)
-                .background(mode == target ? Color.white.opacity(0.8) : Color.clear, in: Circle())
+                .background(isOn ? Color.white.opacity(0.8) : Color.clear, in: Circle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// On iPad the player covers the whole screen instead of sitting in a sheet, so a swipe down
+/// on the artwork or the background closes it. Sliders, lyrics and the queue keep their own
+/// drags.
+private struct SwipeDownToClose: ViewModifier {
+    let enabled: Bool
+    let close: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.gesture(
+                DragGesture(minimumDistance: 40)
+                    .onEnded { value in
+                        if value.translation.height > 120, abs(value.translation.width) < 140 { close() }
+                    }
+            )
+        } else {
+            content
+        }
     }
 }
 

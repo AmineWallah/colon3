@@ -190,7 +190,8 @@ private struct SongShelf: View {
             LazyHGrid(rows: Array(repeating: GridItem(.fixed(64), spacing: 0), count: 4), spacing: 16) {
                 ForEach(entries) { entry in
                     ChartSongRow(entry: entry, showRank: false, list: entries)
-                        .containerRelativeFrame(.horizontal) { width, _ in width - 36 }
+                        // A column fills an iPhone's width (the next one peeks in); an iPad shows several.
+                        .containerRelativeFrame(.horizontal) { width, _ in width > 700 ? 360 : width - 36 }
                 }
             }
             .scrollTargetLayout()
@@ -629,7 +630,7 @@ private struct ReleasesGrid: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 20) {
+            LazyVGrid(columns: AdaptiveGrid.columns, spacing: 20) {
                 ForEach(trending.recentReleases) { album in
                     ReleaseCard(album: album, inShelf: false)
                 }
@@ -685,7 +686,7 @@ private struct RecentlyPlayedGrid: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 20) {
+            LazyVGrid(columns: AdaptiveGrid.columns, spacing: 20) {
                 ForEach(stats.recentlyPlayed(limit: 60, in: library)) { item in
                     PlayedCard(item: item, inShelf: false)
                 }
@@ -699,15 +700,19 @@ private struct RecentlyPlayedGrid: View {
 
 // MARK: - Shared
 
-/// Two cards per screen width in a sideways shelf.
+/// Two cards per screen width in a sideways shelf; fixed-size cards on an iPad's wide screen.
 private struct ShelfWidth: ViewModifier {
     let active: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        if active {
-            content.containerRelativeFrame(.horizontal, count: 2, spacing: 14)
-        } else {
+        if !active {
             content
+        } else if sizeClass == .regular {
+            content.frame(width: 180)
+        } else {
+            content.containerRelativeFrame(.horizontal, count: 2, spacing: 14)
         }
     }
 }

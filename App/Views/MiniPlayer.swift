@@ -81,6 +81,8 @@ struct FloatingMiniPlayer: View {
     var body: some View {
         MiniPlayerContent(compact: false, open: open)
             .frame(height: 56)
+            // A bar in the middle on an iPad, not one stretched across the whole screen.
+            .frame(maxWidth: 560)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.15), radius: 12, y: 4)

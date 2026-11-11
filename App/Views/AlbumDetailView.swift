@@ -10,6 +10,7 @@ struct AlbumDetailView: View {
     @EnvironmentObject private var completeness: AlbumCompletenessStore
     @EnvironmentObject private var soulseek: SoulseekModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage(AppSettings.showMissingKey) private var showMissingSetting = true
     @State private var pendingDelete: [Track]?
     @State private var findingTrack: MissingTrack?
@@ -66,49 +67,44 @@ struct AlbumDetailView: View {
     var body: some View {
         let album = current
         ScrollView {
-            VStack(spacing: 6) {
-                ArtworkView(source: .album(album), cornerRadius: 12)
-                    .frame(maxWidth: 270)
-                    .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                    .padding(.top, 8)
-                    .padding(.bottom, 14)
-
-                Text(album.title)
-                    .font(.title2.weight(.bold))
-                    .multilineTextAlignment(.center)
-                if let artist = library.artist(named: album.artist) {
-                    NavigationLink(value: artist) {
-                        Text(album.artist).font(.title3).foregroundStyle(.tint)
+            if sizeClass == .regular {
+                // iPad: the cover on the left with the title, details and buttons beside it.
+                HStack(alignment: .bottom, spacing: 28) {
+                    ArtworkView(source: .album(album), cornerRadius: 12)
+                        .frame(width: 260, height: 260)
+                        .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(album.title)
+                            .font(.largeTitle.weight(.bold))
+                            .multilineTextAlignment(.leading)
+                        artistLink(album)
+                        detailLine(album)
+                        playButtons(album)
+                            .frame(maxWidth: 380)
+                            .padding(.top, 14)
                     }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(album.artist).font(.title3).foregroundStyle(.tint)
+                    Spacer(minLength: 0)
                 }
-                HStack(spacing: 6) {
-                    Text(details(album))
-                    if album.tracks.allSatisfy({ ["flac", "alac", "wav", "aif", "aiff"].contains($0.fileExtension) }) {
-                        BadgeLabel(text: "Lossless", systemImage: "waveform")
-                    }
-                    if album.isSpatial {
-                        BadgeLabel(text: "Spatial", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Button { player.play(album.tracks) } label: {
-                        Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    }
-                    Button { player.play(album.tracks, shuffled: true) } label: {
-                        Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .padding(.horizontal, 20)
                 .padding(.top, 12)
+            } else {
+                VStack(spacing: 6) {
+                    ArtworkView(source: .album(album), cornerRadius: 12)
+                        .frame(maxWidth: 270)
+                        .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                        .padding(.top, 8)
+                        .padding(.bottom, 14)
+
+                    Text(album.title)
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    artistLink(album)
+                    detailLine(album)
+                    playButtons(album)
+                        .padding(.top, 12)
+                }
+                .padding(.horizontal, 20)
             }
-            .padding(.horizontal, 20)
 
             LazyVStack(alignment: .leading, spacing: 0) {
                 let allDiscs = discs(album)
@@ -203,6 +199,45 @@ struct AlbumDetailView: View {
             let remaining = Set(album.tracks.map(\.id)).subtracting(deleted.map(\.id))
             if remaining.isEmpty { dismiss() }
         }
+    }
+
+    @ViewBuilder
+    private func artistLink(_ album: Album) -> some View {
+        if let artist = library.artist(named: album.artist) {
+            NavigationLink(value: artist) {
+                Text(album.artist).font(.title3).foregroundStyle(.tint)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(album.artist).font(.title3).foregroundStyle(.tint)
+        }
+    }
+
+    private func detailLine(_ album: Album) -> some View {
+        HStack(spacing: 6) {
+            Text(details(album))
+            if album.tracks.allSatisfy({ ["flac", "alac", "wav", "aif", "aiff"].contains($0.fileExtension) }) {
+                BadgeLabel(text: "Lossless", systemImage: "waveform")
+            }
+            if album.isSpatial {
+                BadgeLabel(text: "Spatial", systemImage: "dot.radiowaves.left.and.right")
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+
+    private func playButtons(_ album: Album) -> some View {
+        HStack(spacing: 12) {
+            Button { player.play(album.tracks) } label: {
+                Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity)
+            }
+            Button { player.play(album.tracks, shuffled: true) } label: {
+                Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
     }
 
     @ViewBuilder
@@ -357,7 +392,7 @@ struct ArtistDetailView: View {
     @State private var pendingDelete: [Track]?
 
     private var current: ArtistEntry { library.artist(named: artist.name) ?? artist }
-    private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    private let columns = AdaptiveGrid.columns
 
     var body: some View {
         let artist = current

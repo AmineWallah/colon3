@@ -50,6 +50,11 @@ struct ArtworkView: View {
     }
 }
 
+enum AdaptiveGrid {
+    /// Cover grids: two columns on an iPhone, more as the screen gets wider (iPad).
+    static let columns = [GridItem(.adaptive(minimum: 150, maximum: 260), spacing: 16)]
+}
+
 struct ArtworkPlaceholder: View {
     var body: some View {
         ZStack {

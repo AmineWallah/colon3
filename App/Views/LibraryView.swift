@@ -31,7 +31,7 @@ struct LibraryView: View {
     @State private var pendingDelete: [Track]?
     @State private var confirmMerge = false
 
-    private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    private let columns = AdaptiveGrid.columns
 
     var body: some View {
         NavigationStack {
