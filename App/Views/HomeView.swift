@@ -958,7 +958,8 @@ private struct ContinueTile: View {
             withAnimation(.easeInOut(duration: 0.4)) { carryOn() }
         } label: {
             PickTile(caption: "Continue Listening", title: track.title,
-                     subtitle: track.artist + "\n" + remaining,
+                     // Time first: a long artist line would push it out of the two lines.
+                     subtitle: remaining + " \u{00B7} " + track.artist,
                      artwork: library.artwork(for: track),
                      progress: min(max(position / duration, 0), 1))
         }
