@@ -10,9 +10,7 @@ CI uses the section matching the build's version as the GitHub Release notes and
 - **Songs you don't play:** the same page lists songs not played in 30 days: ones never played that were downloaded over 30 days ago, and ones last played over 30 days ago. Delete them all at once, or pick which. Favourites are left out unless you include them.
 - **Find Lyrics:** when the automatic lyrics are missing or wrong, search LRCLIB yourself from the song menu, the Now Playing menu or the lyrics view. Results show whether they're synced and whether their length matches your song; preview one and tap Use These Lyrics to save it as the song's .lrc.
 - **Find Cover Online:** Change Artwork › Find Cover Online shows the five best covers for an album or song from Apple Music, Deezer and MusicBrainz. Tap one to use it.
-
 - **Romanized lyrics:** Japanese lyrics get romaji, Chinese pinyin with tone marks, and Korean its romanization, in smaller type under each line, worked out on the phone. Kanji in Japanese songs get their Japanese readings. Turn it off with Romanize Lyrics in the Now Playing menu.
-
 - **Landscape player:** turn the phone sideways in Now Playing for a landscape layout: the artwork, lyrics or queue on the left, and the song, controls, volume and buttons on the right. The rest of the app stays in portrait.
 - **Top Picks:** the top of Home is a row of tall tiles like Apple Music's. The first is **Continue Listening**: the song you stopped on, where you stopped, even after closing the app; tap it to carry on with the same queue (it fades away as playback starts). After it: Favourites Mix, Most Played, Not Played Lately (songs you haven't played in 30 days), your newest album and the last album you played. Move or hide the row in Settings › Appearance › Home Sections.
 - **Go to Album:** in the Now Playing menu, opens the album of the song that's playing.

@@ -51,6 +51,15 @@ If colon3 is useful to you, you can support it on [Liberapay](https://liberapay.
   </tr>
 </table>
 
+### iPad
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/ipad-home.jpg" width="400" alt="Home on iPad"><br><b>Home</b></td>
+    <td align="center"><img src="docs/screenshots/ipad-player.jpg" width="400" alt="Player with lyrics on iPad"><br><b>Player with lyrics</b></td>
+  </tr>
+</table>
+
 ## Layout
 
 ```
