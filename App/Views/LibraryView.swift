@@ -29,6 +29,7 @@ struct LibraryView: View {
     @State private var selecting = false
     @State private var selection = Set<String>()
     @State private var pendingDelete: [Track]?
+    @State private var confirmMerge = false
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
@@ -50,6 +51,17 @@ struct LibraryView: View {
                     selecting = false
                 }
                 .onChange(of: scope) { _, _ in selection.removeAll() }
+                .confirmationDialog("Merge into which album?", isPresented: $confirmMerge, titleVisibility: .visible) {
+                    let chosen = selectedAlbums
+                    ForEach(Array(chosen.prefix(8))) { album in
+                        Button(album.title) {
+                            library.merge(chosen, into: album)
+                            endSelection()
+                        }
+                    }
+                } message: {
+                    Text("The other albums' songs join the one you pick, which keeps its name and cover. No files are changed, and the album's menu can separate them again.")
+                }
         }
     }
 
@@ -394,8 +406,17 @@ struct LibraryView: View {
         }
     }
 
+    private var selectedAlbums: [Album] {
+        guard scope == .albums else { return [] }
+        return filteredItems.compactMap { item -> Album? in
+            guard selection.contains(item.id), case let .album(album) = item else { return nil }
+            return album
+        }
+    }
+
     private var selectionBar: some View {
         let tracks = selectedTracks
+        let albumCount = selectedAlbums.count
         return HStack {
             Button { player.play(tracks); endSelection() } label: { Label("Play", systemImage: "play.fill") }
             Spacer()
@@ -405,6 +426,11 @@ struct LibraryView: View {
             Spacer()
             Button { router.addToPlaylist(tracks); endSelection() } label: { Label("Add to Playlist", systemImage: "text.badge.plus") }
             Spacer()
+            if scope == .albums {
+                Button { confirmMerge = true } label: { Label("Merge Albums", systemImage: "arrow.triangle.merge") }
+                    .disabled(albumCount < 2)
+                Spacer()
+            }
             Button(role: .destructive) { pendingDelete = tracks } label: { Label("Delete", systemImage: "trash") }
         }
         .labelStyle(.iconOnly)

@@ -34,12 +34,49 @@ struct Album: Identifiable, Hashable {
     let tracks: [Track]
     let folder: URL
     let addedAt: Date
+    /// How many other albums were merged into this one by hand (see `AlbumMerges`).
+    var mergedCount = 0
 
     var duration: Double { tracks.reduce(0) { $0 + $1.duration } }
     var isSpatial: Bool { tracks.contains(where: \.isSpatial) }
 
     static func == (lhs: Album, rhs: Album) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// Albums joined by hand (Library › Select › Merge, or an album's menu). Nothing on disk
+/// changes: when albums are put together, the merged ones' songs are filed under the one
+/// that was kept, and separating them puts everything back.
+struct AlbumMerges: Codable, Sendable, Equatable {
+    struct Merge: Codable, Sendable, Equatable {
+        /// The album that was merged away and the one it went into, as album keys with the
+        /// Music folder written as "~" (the app's container path changes between installs).
+        var source: String
+        var target: String
+    }
+
+    /// In the order they were made; the kept album's own songs come first, then these.
+    var merges: [Merge] = []
+    /// The kept album's title and artist when it was merged, for when its own songs are
+    /// deleted later and only merged ones are left.
+    var titles: [String: String] = [:]
+    var artists: [String: String] = [:]
+
+    static let storageKey = "library.albumMerges"
+
+    static func load() -> AlbumMerges {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode(AlbumMerges.self, from: data) else { return AlbumMerges() }
+        return decoded
+    }
+
+    func save() {
+        if merges.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.storageKey)
+        } else if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.storageKey)
+        }
+    }
 }
 
 /// What the library grid shows: albums, plus songs that don't belong to one.

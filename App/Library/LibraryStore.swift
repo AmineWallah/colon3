@@ -24,6 +24,9 @@ final class LibraryStore: ObservableObject {
     private var rescanQueued = false
     private var rescanSoonScheduled = false
     private var albumByTrack: [String: Album] = [:]
+    /// Album id → its grouping key, as `AlbumMerges` stores them.
+    private var albumKeys: [String: String] = [:]
+    private var albumMerges = AlbumMerges.load()
     private var tracksByID: [String: Track] = [:]
     private var albumsByID: [String: Album] = [:]
 
@@ -136,9 +139,10 @@ final class LibraryStore: ObservableObject {
         isScanning = true
         let root = self.root
         let known = cache
+        let merges = albumMerges
 
         Task.detached(priority: .utility) {
-            let result = await Self.scan(root: root, cache: known)
+            let result = await Self.scan(root: root, cache: known, merges: merges)
             await MainActor.run { self.apply(result) }
         }
     }
@@ -166,6 +170,7 @@ final class LibraryStore: ObservableObject {
         tracksByID = result.tracksByID
         albumsByID = result.albumsByID
         albumByTrack = result.albumByTrack
+        albumKeys = result.albumKeys
         scanRevision += 1
         isScanning = false
         onSharesChanged?(result.shares)
@@ -198,9 +203,10 @@ final class LibraryStore: ObservableObject {
         let tracksByID: [String: Track]
         let albumsByID: [String: Album]
         let albumByTrack: [String: Album]
+        let albumKeys: [String: String]
     }
 
-    private nonisolated static func scan(root: URL, cache: [String: CachedEntry]) async -> ScanResult {
+    private nonisolated static func scan(root: URL, cache: [String: CachedEntry], merges: AlbumMerges) async -> ScanResult {
         let files = audioFiles(in: root)
         var newCache: [String: CachedEntry] = [:]
         var tracks: [Track] = []
@@ -251,7 +257,7 @@ final class LibraryStore: ObservableObject {
             let virtualPath = (["colon3"] + file.relativePath.split(separator: "/").map(String.init)).joined(separator: "\\")
             shares.append(LocalShare(virtualPath: virtualPath, url: file.url, size: UInt64(max(file.size, 0))))
         }
-        let grouped = group(tracks, root: root)
+        let grouped = group(tracks, root: root, merges: merges)
         var albumByTrack: [String: Album] = [:]
         for album in grouped.albums {
             for track in album.tracks { albumByTrack[track.id] = album }
@@ -261,7 +267,8 @@ final class LibraryStore: ObservableObject {
             albums: grouped.albums, items: grouped.items, artists: grouped.artists,
             tracksByID: Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
             albumsByID: Dictionary(grouped.albums.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-            albumByTrack: albumByTrack)
+            albumByTrack: albumByTrack,
+            albumKeys: grouped.keys)
     }
 
     private struct FileEntry: Sendable {
@@ -292,7 +299,58 @@ final class LibraryStore: ObservableObject {
 
     // MARK: Grouping
 
-    private nonisolated static func group(_ tracks: [Track], root: URL) -> (albums: [Album], items: [LibraryItem], artists: [ArtistEntry]) {
+    /// Disc, then track number, then file name.
+    private nonisolated static func albumOrder(_ lhs: Track, _ rhs: Track) -> Bool {
+        if (lhs.discNumber ?? 1) != (rhs.discNumber ?? 1) { return (lhs.discNumber ?? 1) < (rhs.discNumber ?? 1) }
+        if let left = lhs.trackNumber, let right = rhs.trackNumber, left != right { return left < right }
+        return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+    }
+
+    /// A grouping key with the Music folder written as "~", and back.
+    private nonisolated static func portableKey(_ key: String, rootPath: String) -> String {
+        let prefix = "folder:" + rootPath
+        return key.hasPrefix(prefix) ? "folder:~" + String(key.dropFirst(prefix.count)) : key
+    }
+
+    private nonisolated static func localKey(_ key: String, rootPath: String) -> String {
+        let prefix = "folder:~"
+        return key.hasPrefix(prefix) ? "folder:" + rootPath + String(key.dropFirst(prefix.count)) : key
+    }
+
+    /// The songs of merged albums as one tracklist. When the albums' track numbers clash (two
+    /// discs kept as separate albums, an album and its bonus disc) each becomes its own disc,
+    /// after the ones before it; otherwise the numbers already say where every song goes.
+    private nonisolated static func mergedOrder(_ parts: [[Track]]) -> [Track] {
+        var seen = Set<String>()
+        var clash = false
+        for part in parts {
+            let numbers = Set(part.compactMap { track -> String? in
+                guard let number = track.trackNumber else { return nil }
+                return "\(track.discNumber ?? 1).\(number)"
+            })
+            if !seen.isDisjoint(with: numbers) { clash = true }
+            seen.formUnion(numbers)
+        }
+        guard clash else { return parts.flatMap { $0 }.sorted(by: albumOrder) }
+
+        var result: [Track] = []
+        var discsBefore = 0
+        for part in parts {
+            var highest = discsBefore
+            for original in part {
+                var track = original
+                let disc = (original.discNumber ?? 1) + discsBefore
+                track.discNumber = disc
+                highest = max(highest, disc)
+                result.append(track)
+            }
+            discsBefore = highest
+        }
+        return result
+    }
+
+    private nonisolated static func group(_ tracks: [Track], root: URL, merges: AlbumMerges)
+        -> (albums: [Album], items: [LibraryItem], artists: [ArtistEntry], keys: [String: String]) {
         let rootPath = root.standardizedFileURL.path
         let audioPerFolder = Dictionary(grouping: tracks, by: { $0.folder.standardizedFileURL.path }).mapValues(\.count)
 
@@ -316,24 +374,46 @@ final class LibraryStore: ObservableObject {
             }
         }
 
-        var albums: [Album] = []
-        for (key, members) in albumTracks {
-            let sorted = members.sorted { lhs, rhs in
-                if (lhs.discNumber ?? 1) != (rhs.discNumber ?? 1) { return (lhs.discNumber ?? 1) < (rhs.discNumber ?? 1) }
-                if let left = lhs.trackNumber, let right = rhs.trackNumber, left != right { return left < right }
-                return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+        // Albums merged by hand: their songs go to the album that was kept.
+        var mergedParts: [String: [[Track]]] = [:]
+        if !merges.merges.isEmpty {
+            var localKeys: [String: String] = [:]
+            for key in albumTracks.keys { localKeys[portableKey(key, rootPath: rootPath)] = key }
+            for merge in merges.merges {
+                guard let sourceKey = localKeys[merge.source], let moved = albumTracks[sourceKey] else { continue }
+                let targetKey = localKeys[merge.target] ?? localKey(merge.target, rootPath: rootPath)
+                guard targetKey != sourceKey else { continue }
+                albumTracks[sourceKey] = nil
+                mergedParts[targetKey, default: []].append(moved.sorted(by: albumOrder))
+                // The kept album's own songs may all be gone; it lives on through the merged ones.
+                if albumTracks[targetKey] == nil { albumTracks[targetKey] = [] }
             }
-            let artists = Set(sorted.map(\.artist))
-            let artist = sorted.compactMap(\.albumArtist).first
-                ?? (artists.count == 1 ? sorted[0].artist : "Various Artists")
+        }
+
+        var albums: [Album] = []
+        var keys: [String: String] = [:]
+        for (key, members) in albumTracks {
+            let portable = portableKey(key, rootPath: rootPath)
+            let own = members.sorted(by: albumOrder)
+            let parts = mergedParts[key] ?? []
+            let sorted = parts.isEmpty ? own : mergedOrder(([own] + parts).filter { !$0.isEmpty })
+            guard !sorted.isEmpty else { continue }
+            // Title, artist and year come from the kept album's own songs while it has any.
+            let named = own.isEmpty ? sorted : own
+            let artists = Set(named.map(\.artist))
+            let artist = named.compactMap(\.albumArtist).first
+                ?? (artists.count == 1 ? named[0].artist : "Various Artists")
+            let id = MD5.hex(key)
+            keys[id] = portable
             albums.append(Album(
-                id: MD5.hex(key),
-                title: albumTitles[key] ?? "Unknown Album",
-                artist: artist,
-                year: sorted.compactMap(\.year).first,
+                id: id,
+                title: albumTitles[key] ?? merges.titles[portable] ?? "Unknown Album",
+                artist: own.isEmpty ? (merges.artists[portable] ?? artist) : artist,
+                year: named.compactMap(\.year).first,
                 tracks: sorted,
-                folder: sorted[0].folder,
-                addedAt: sorted.map(\.addedAt).max() ?? .distantPast))
+                folder: named[0].folder,
+                addedAt: sorted.map(\.addedAt).max() ?? .distantPast,
+                mergedCount: parts.count))
         }
         albums.sort { SortKey.less($0.title, $1.title) }
 
@@ -349,7 +429,54 @@ final class LibraryStore: ObservableObject {
                         albums: (artistAlbums[name] ?? []).sorted { ($0.year ?? 0, $0.title) > ($1.year ?? 0, $1.title) },
                         singles: (artistSingles[name] ?? []).sorted { SortKey.less($0.title, $1.title) })
         }
-        return (albums, items, artists)
+        return (albums, items, artists, keys)
+    }
+
+    // MARK: Merging albums
+
+    /// Files the songs of `others` under `target`, which keeps its title, artist and cover.
+    /// No file or tag is changed; `separate` undoes it.
+    func merge(_ others: [Album], into target: Album) {
+        guard let targetKey = albumKeys[target.id] else { return }
+        var merges = albumMerges
+        for album in others where album.id != target.id {
+            guard let sourceKey = albumKeys[album.id], sourceKey != targetKey else { continue }
+            // Albums that were merged into this one go along with it.
+            for index in merges.merges.indices where merges.merges[index].target == sourceKey {
+                merges.merges[index].target = targetKey
+            }
+            merges.merges.removeAll { $0.source == sourceKey }
+            merges.merges.append(AlbumMerges.Merge(source: sourceKey, target: targetKey))
+            merges.titles[sourceKey] = nil
+            merges.artists[sourceKey] = nil
+        }
+        guard merges != albumMerges else { return }
+        merges.titles[targetKey] = target.title
+        merges.artists[targetKey] = target.artist
+        albumMerges = merges
+        merges.save()
+        rescan()
+    }
+
+    /// Splits an album back into the ones that were merged into it.
+    func separate(_ album: Album) {
+        guard let key = albumKeys[album.id] else { return }
+        var merges = albumMerges
+        merges.merges.removeAll { $0.target == key }
+        merges.titles[key] = nil
+        merges.artists[key] = nil
+        guard merges != albumMerges else { return }
+        albumMerges = merges
+        merges.save()
+        rescan()
+    }
+
+    /// After a restore brought the merges back with the other settings.
+    func reloadMerges() {
+        let stored = AlbumMerges.load()
+        guard stored != albumMerges else { return }
+        albumMerges = stored
+        rescan()
     }
 
     // MARK: Changes

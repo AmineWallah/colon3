@@ -179,6 +179,7 @@ final class BackupService: ObservableObject {
         "missing.hiddenAlbums", "spotify.clientID", "update.automatic", "update.channel", "username",
         "import.playlists", "autoplay.discoveriesPlaylist",
         "backup.automatic", "backup.includeMusic", "backup.cellular", "discord.enabled",
+        AlbumMerges.storageKey,
     ]
 
     let drive: GoogleDrive
@@ -571,6 +572,7 @@ final class BackupService: ObservableObject {
             automatic = defaults.bool(forKey: "backup.automatic")
             includeMusic = defaults.bool(forKey: "backup.includeMusic")
             useCellular = defaults.bool(forKey: "backup.cellular")
+            library.reloadMerges()
         }
 
         // Drive copies of the missing songs, plus the covers and lyrics in their folders.

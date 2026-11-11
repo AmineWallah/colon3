@@ -13,6 +13,7 @@ struct AlbumDetailView: View {
     @AppStorage(AppSettings.showMissingKey) private var showMissingSetting = true
     @State private var pendingDelete: [Track]?
     @State private var findingTrack: MissingTrack?
+    @State private var showMerge = false
 
     /// Re-read after rescans so edits and deletions show up.
     private var current: Album { library.album(id: album.id) ?? album }
@@ -164,6 +165,19 @@ struct AlbumDetailView: View {
                 Menu {
                     TrackMenuItems(tracks: album.tracks, album: album) { pendingDelete = $0 }
                     missingSongsMenu(album)
+                    Divider()
+                    Button {
+                        showMerge = true
+                    } label: {
+                        Label("Merge with Other Albums\u{2026}", systemImage: "arrow.triangle.merge")
+                    }
+                    if album.mergedCount > 0 {
+                        Button {
+                            library.separate(album)
+                        } label: {
+                            Label("Separate Merged Albums", systemImage: "arrow.triangle.branch")
+                        }
+                    }
                     Button {
                         Task {
                             await ArtworkStore.shared.invalidate(.album(album))
@@ -180,6 +194,9 @@ struct AlbumDetailView: View {
         .sheet(item: $findingTrack) { track in
             FindTrackSheet(track: track, album: current)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showMerge) {
+            MergeAlbumsSheet(album: current)
         }
         .confirmDelete($pendingDelete) { deleted in
             // Leave the page once the whole album is gone.
@@ -228,6 +245,107 @@ struct AlbumDetailView: View {
     private func minutes(_ seconds: Double) -> String {
         let total = Int(seconds / 60)
         return total >= 60 ? "\(total / 60) hr \(total % 60) min" : "\(total) minute\(total == 1 ? "" : "s")"
+    }
+}
+
+/// "Merge with Other Albums…": pick the albums whose songs should join this one. The files
+/// and their tags stay as they are; the album's menu separates them again.
+struct MergeAlbumsSheet: View {
+    let album: Album
+
+    @EnvironmentObject private var library: LibraryStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var picked = Set<String>()
+
+    private var others: [Album] {
+        library.albums.filter { other in
+            guard other.id != album.id else { return false }
+            return query.isEmpty
+                || other.title.localizedCaseInsensitiveContains(query)
+                || other.artist.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func sameArtist(_ other: Album) -> Bool {
+        other.artist.caseInsensitiveCompare(album.artist) == .orderedSame
+    }
+
+    var body: some View {
+        let all = others
+        let related = all.filter { sameArtist($0) }
+        let rest = all.filter { !sameArtist($0) }
+        NavigationStack {
+            List {
+                if !related.isEmpty {
+                    Section {
+                        ForEach(related) { row($0) }
+                    } header: {
+                        Text("By \(album.artist)")
+                    }
+                }
+                if !rest.isEmpty {
+                    Section {
+                        ForEach(rest) { row($0) }
+                    } header: {
+                        Text(related.isEmpty ? "Albums" : "Other Albums")
+                    }
+                }
+                if all.isEmpty {
+                    Text(query.isEmpty ? "There are no other albums in your library." : "No albums match.")
+                        .foregroundStyle(.secondary)
+                }
+                Section {
+                } footer: {
+                    Text("The songs of the albums you pick join \u{201C}\(album.title)\u{201D}, which keeps its name and cover. Albums with their own track numbers become extra discs. No files are changed, and Separate Merged Albums in the album's menu undoes it.")
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search albums")
+            .navigationTitle("Merge Albums")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(mergeTitle) {
+                        library.merge(library.albums.filter { picked.contains($0.id) }, into: album)
+                        dismiss()
+                    }
+                    .disabled(picked.isEmpty)
+                }
+            }
+        }
+    }
+
+    private var mergeTitle: String {
+        picked.isEmpty ? "Merge" : "Merge \(picked.count)"
+    }
+
+    private func row(_ other: Album) -> some View {
+        let isPicked = picked.contains(other.id)
+        let songs = other.tracks.count == 1 ? "1 song" : "\(other.tracks.count) songs"
+        let detail = other.artist + " \u{00B7} " + songs
+        return Button {
+            if isPicked { picked.remove(other.id) } else { picked.insert(other.id) }
+        } label: {
+            HStack(spacing: 12) {
+                ArtworkView(source: .album(other), size: 46, cornerRadius: 6)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(other.title).lineLimit(1)
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isPicked ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
